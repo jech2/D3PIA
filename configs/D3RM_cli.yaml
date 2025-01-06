@@ -8,7 +8,7 @@ trainer:
   gradient_clip_algorithm: norm
   gradient_clip_val: 1.0
   accumulate_grad_batches: 1
-  devices: 2
+  devices: 1 
   accelerator: gpu
   strategy: ddp
   log_every_n_steps: 10
@@ -34,7 +34,7 @@ trainer:
     #     verbose: True
 
 model:
-  encoder_parameters: pretrained
+  encoder_parameters: no_pretrain
   pretrained_encoder_path: model_170k_0.9063_nonar.pt
   freeze_encoder: False
   test_save_path: './results/'
@@ -56,9 +56,19 @@ model:
   reverse_sampling: True
 
   encoder:
-    class_path: transcription.encoder.ARModel
+    class_path: transcription.decoder.LSTM_NATTEN
     init_args:
-      use_vel: False
+      hidden: 4
+      timestep_type: null
+      diffusion_step: 100
+      natten_direction: 2d
+      dilation: [1,2,4,8,1,2,4,8]
+      spatial_size: [313,88]
+      window: [5,5,5,5,5,5,5,5]
+      n_unit: 48
+      n_layers: 8
+      cross_condition: self
+      type: encoder
 
   decoder:  
     class_path: transcription.decoder.TransModel
@@ -66,15 +76,17 @@ model:
       label_embed_dim: 4
       lstm_dim: 48
       n_layers: 8
-      window: [3,3,3,3,3,3,3,3]
+      window: [5,5,5,5,5,5,5,5]
       dilation: [1,2,4,8,1,2,4,8]
       condition_method: self
       diffusion_step: 100
       timestep_type: adalayernorm
       natten_direction: 2d
       spatial_size: [313,88]
-      num_state: 5
+      num_state: 4
+      num_class: 3
       classifier_free_guidance: False
+      features_embed_dim: 48
 
   optimizer:
     class_path: torch.optim.AdamW
@@ -95,14 +107,18 @@ model:
 
 
 data:
-  data_dir: './data/maestro-v3.0.0'
-  batch_size: 4
+  data_dir: './data/pop1k7'
+  batch_size: 8 
   num_workers: 12
   # train: True
   # validation: True
   # test: True
   # predict: False
-  train_seq_len: 160256
-  valid_seq_len: 160256
+  train_seq_len: 313
+  valid_seq_len: 313
+  # train_seq_len: 160256
+  # valid_seq_len: 160256
   # sampling_rate: 16000
   hop_size: 512
+  transpose: true
+  pr_res: 32

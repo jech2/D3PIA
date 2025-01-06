@@ -1,0 +1,30 @@
+[project]
+name = "d3rm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "joblib>=1.4.2",
+    "librosa==0.9.2",
+    "lightning>=2.5.0.post0",
+    "midisym",
+    "natten==0.15.1+torch210cu121",
+    "nnaudio>=0.3.3",
+    "numpy==1.25.2",
+    "pandas==2.1.0",
+    "pillow>=11.1.0",
+    "pytorch-lightning>=2.5.0.post0",
+    "scipy>=1.15.0",
+    "six>=1.17.0",
+    "soundfile>=0.13.0",
+    "termcolor>=2.5.0",
+    "timm>=1.0.12",
+    "torch==2.1.2",
+    "torchaudio==2.1.2",
+    "torchvision==0.16.2",
+    "wandb>=0.19.1",
+]
+
+[tool.uv.sources]
+midisym = { path = "../midisym" }

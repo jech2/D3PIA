@@ -99,7 +99,7 @@ class DiscreteDiffusion(pl.LightningModule):
         self.encoder = encoder
         self.decoder = decoder
         self.label_seq_len = self.shape = label_seq_len
-        self.num_classes = 6
+        self.num_classes = self.decoder.num_state
         self.loss_type = 'vb_stochastic'
         self.num_timesteps = diffusion_step
         self.parametrization = 'x0'

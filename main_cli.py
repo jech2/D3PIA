@@ -2,7 +2,7 @@
 from pytorch_lightning.cli import LightningArgumentParser, LightningCLI
 
 from transcription.module import D3RM
-from transcription.datamodule import MAESTRO_V3_DataModule
+from transcription.datamodule import MAESTRO_V3_DataModule, Pop1k7_DataModule
 
 # simple demo classes for your convenience
 import argparse, os, glob, datetime
@@ -30,10 +30,10 @@ class D3RMCLI(LightningCLI):
             print(colored("Continue training from checkpoint: ", "red", attrs=['bold']), ckpt_date)
             self.now = id = ckpt_date
         # Logging
-        wandb.login(key="99aeb92834216fc5de43eb5235fbe169caf149c0")
+        # wandb.login(key="99aeb92834216fc5de43eb5235fbe169caf149c0")
         wandb_logger = WandbLogger(save_dir=f"./logs/{self.now}",
                                    name=self.now,
-                                   project="D3RM",
+                                   project="PianoArrDiffusion",
                                    offline=(not self.config.fit.wandb),
                                    id=id)
 
@@ -57,9 +57,10 @@ class D3RMCLI(LightningCLI):
     
 
 def cli_main():
-    cli = D3RMCLI(D3RM, MAESTRO_V3_DataModule,
-                #   save_config_kwargs={"overwrite": True}, #  save_config_callback=None # when using wandb, saving config leads to conflicts.
-                  )
-
+    # cli = D3RMCLI(D3RM, MAESTRO_V3_DataModule,
+    #             #   save_config_kwargs={"overwrite": True}, #  save_config_callback=None # when using wandb, saving config leads to conflicts.
+    #               )
+    cli = D3RMCLI(D3RM, Pop1k7_DataModule)    
+    
 if __name__ == "__main__":
     cli_main()

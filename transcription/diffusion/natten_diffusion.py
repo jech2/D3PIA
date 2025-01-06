@@ -88,6 +88,7 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         self.num_heads = num_heads
         self.head_dim = dim // self.num_heads
         self.scale = qk_scale or self.head_dim**-0.5
+        self.timestep_type = timestep_type
         assert (
             kernel_size > 1 and kernel_size % 2 == 1
         ), f"Kernel size must be an odd number greater than 1, got {kernel_size}."
@@ -97,7 +98,8 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         ), f"Dilation must be greater than or equal to 1, got {dilation}."
         self.dilation = dilation or 1
         self.window_size = self.kernel_size * self.dilation
-        self.ln = AdaLayerNorm(dim=dim, diffusion_step=diffusion_step, emb_type=timestep_type)
+        if timestep_type != None:
+            self.ln = AdaLayerNorm(dim=dim, diffusion_step=diffusion_step, emb_type=timestep_type)
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         if bias:
@@ -129,7 +131,8 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         
         # conditioning t
         x = x.reshape(B, H*W, C)
-        x = self.ln(x, t)
+        if self.timestep_type != None:
+            x = self.ln(x, t)
         x = x.reshape(B, H, W, C)
 
         qkv = (
@@ -182,6 +185,7 @@ class NeighborhoodCrossAttention2D_diffusion(nn.Module):
         self.num_heads = num_heads
         self.head_dim = dim // self.num_heads
         self.scale = qk_scale or self.head_dim**-0.5
+        self.timestep_type = timestep_type
         assert (
             kernel_size > 1 and kernel_size % 2 == 1
         ), f"Kernel size must be an odd number greater than 1, got {kernel_size}."
@@ -191,8 +195,9 @@ class NeighborhoodCrossAttention2D_diffusion(nn.Module):
         ), f"Dilation must be greater than or equal to 1, got {dilation}."
         self.dilation = dilation or 1
         self.window_size = self.kernel_size * self.dilation
-        self.ln1 = AdaLayerNorm(dim=dim, diffusion_step=diffusion_step, emb_type=timestep_type)
-        self.ln1_1 = AdaLayerNorm(dim=dim, diffusion_step=diffusion_step, emb_type=timestep_type)
+        if timestep_type != None:
+            self.ln1 = AdaLayerNorm(dim=dim, diffusion_step=diffusion_step, emb_type=timestep_type)
+            self.ln1_1 = AdaLayerNorm(dim=dim, diffusion_step=diffusion_step, emb_type=timestep_type)
         self.ln2 = nn.LayerNorm(dim)
 
         self.self_qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
@@ -243,7 +248,8 @@ class NeighborhoodCrossAttention2D_diffusion(nn.Module):
         # conditioning t
         res = x
         x = x.reshape(B, H*W, C)
-        x = self.ln1(x, t)
+        if self.timestep_type != None:
+            x = self.ln1(x, t)
         x = x.reshape(B, H, W, C)
 
         # self attention
@@ -262,7 +268,8 @@ class NeighborhoodCrossAttention2D_diffusion(nn.Module):
         # conditioning t
         res = x
         x = x.reshape(B, H*W, C)
-        x = self.ln1_1(x, t)
+        if self.timestep_type != None:
+            x = self.ln1_1(x, t)
         x = x.reshape(B, H, W, C)
 
         # cross attention

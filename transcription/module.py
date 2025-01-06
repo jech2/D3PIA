@@ -43,7 +43,6 @@ class D3RM(DiscreteDiffusion):
                  *args, **kwargs):
         super().__init__(encoder=encoder, decoder=decoder, *args, **kwargs)
         self.save_hyperparameters() # for wandb logging
-        self.num_classes = 6
         # self.encoder = encoder
         # self.decoder = decoder
         self.optimizer = optimizer
@@ -68,13 +67,17 @@ class D3RM(DiscreteDiffusion):
         self.validation_step_outputs = defaultdict(list)
 
     def training_step(self, batch, batch_idx):
-        audio = batch['audio'].to(self.device) # B x L
-        label = batch['label'][:,1:,:].to(self.device) # B x T x 88
+        # audio = batch['audio'].to(self.device) # B x L
+        # label = batch['label'][:,1:,:].to(self.device) # B x T x 88
         # _ = batch['velocity'].to(device)
+        
+        arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
+        leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
 
         # forward
-        label = label.reshape(label.shape[0], -1)
-        disc_diffusion_loss = self(label, audio, return_loss=True)
+        arrangement = arrangement.reshape(arrangement.shape[0], -1)
+
+        disc_diffusion_loss = self(arrangement, leadsheet, return_loss=True)
         self.log('train/diffusion_loss', disc_diffusion_loss['loss'].mean(), prog_bar=True, logger=True, on_step=True, on_epoch=False)
         self.log('lr', self.trainer.optimizers[0].param_groups[0]['lr'])
 
@@ -84,18 +87,22 @@ class D3RM(DiscreteDiffusion):
         return disc_diffusion_loss['loss']
     
     def validation_step(self, batch, batch_idx):
-        audio = batch['audio'].to(self.device)
-        label = batch['label'][:,1:,:].to(self.device)
-        shape = label.shape
-        # Forward step (for loss calculation)
-        label = label.reshape(label.shape[0], -1)
-        disc_diffusion_loss = self(label, audio, return_loss=True)
-        frame_out, _ = self.sample_func(audio) # frame out: B x T x 88 x C
-        accuracy = (frame_out == label).float()
+        # audio = batch['audio'].to(self.device)
+        # label = batch['label'][:,1:,:].to(self.device)
+
+        arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
+        leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
+
+        shape = arrangement.shape
+        # Forward step (for loss calculation)    
+        arrangement = arrangement.reshape(arrangement.shape[0], -1)
+        disc_diffusion_loss = self(arrangement, leadsheet, return_loss=True)
+        frame_out, _ = self.sample_func(leadsheet) # frame out: B x T x 88 x C
+        accuracy = (frame_out == arrangement).float()
         validation_metric = defaultdict(list)
-        for n in range(audio.shape[0]):
+        for n in range(leadsheet.shape[0]):
             sample = frame_out.reshape(*shape)[n] 
-            metrics = evaluate(sample, label.reshape(*shape)[n], band_eval=False)
+            metrics = evaluate(sample, arrangement.reshape(*shape)[n], band_eval=False)
             for k, v in metrics.items(): validation_metric[k].append(v)
         # for k, v in validation_metric.items():
         #     validation_metric[k] = torch.tensor(np.mean(np.concatenate(v)), device=self.device)
@@ -116,13 +123,16 @@ class D3RM(DiscreteDiffusion):
         self.validation_step_outputs.clear()
     
     def test_step(self, batch, batch_idx):
-        audio = batch['audio'].to(self.device)
-        B, audio_len = audio.shape[0], audio.shape[1]
+        leadsheet = batch['leadsheet'].to(self.device)   
+        B, n_step, _ = leadsheet.shape
+        # audio = batch['audio'].to(self.device)
+        # B, audio_len = audio.shape[0], audio.shape[1]
         test_metric = defaultdict(list)
 
         frame_outs = [] 
-        n_step = (audio_len - 1) // HOP + 1
-        shape = (audio.shape[0], n_step, 88)
+        # n_step = (audio_len - 1) // HOP + 1
+        # shape = (audio.shape[0], n_step, 88)
+        shape = leadsheet.shape
         seg_len = 313
         overlap = 50
 
@@ -134,44 +144,70 @@ class D3RM(DiscreteDiffusion):
         # for seg in tqdm(range(2)):
             start = seg * (seg_len - overlap)
             end = start + seg_len
+            start = seg * (seg_len - overlap)
+            end = start + seg_len
             if end > n_step:
-                pad_len = n_step*HOP - audio_len
-                start = n_step - seg_len
-                end = n_step
-                audio_pad = F.pad(audio[:, int(start*HOP):], (0, pad_len))
-                audio_pad = audio_pad.to(self.device)
+                pad_len = end - n_step - 1
+                leadsheet_pad = F.pad(leadsheet[:, int(start):], (0, 0, pad_len, 1))
+                leadsheet_pad = leadsheet_pad.to(self.device)
             else:
-                audio_pad = audio[:, int(start*HOP):int(end*HOP)].to(self.device)
+                leadsheet_pad = leadsheet[:, int(start):int(end)].to(self.device)
 
-            frame_out, _ = self.sample_func(audio_pad)
+            print(leadsheet_pad.shape)
+            # if end > n_step:
+            #     pad_len = n_step*HOP - audio_len
+            #     start = n_step - seg_len
+            #     end = n_step
+            #     audio_pad = F.pad(audio[:, int(start*HOP):], (0, pad_len))
+            #     audio_pad = audio_pad.to(self.device)
+            # else:
+            #     audio_pad = audio[:, int(start*HOP):int(end*HOP)].to(self.device)
+
+            frame_out, _ = self.sample_func(leadsheet_pad)
+            # frame_out, _ = self.sample_func(audio_pad)
             sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
-            if seg == 0:
-                frame_outs[:, :end-overlap//2] = sample[:, :-overlap//2]
-            elif seg == n_seg - 1:
-                frame_outs[:, start+overlap//2:] = sample[:, overlap//2:n_step-start]
+            if end > n_step:
+                frame_outs[:, start:] = sample[:, :n_step-start]
             else:
-                frame_outs[:, start+overlap//2:end-overlap//2] = sample[:, overlap//2:-overlap//2]
+                frame_outs[:, start:end] = sample[:, :seg_len]
+            # if seg == 0:
+            #     frame_outs[:, :end-overlap//2] = sample[:, :-overlap//2]
+            # elif seg == n_seg - 1:
+            #     frame_outs[:, start+overlap//2:] = sample[:, overlap//2:n_step-start]
+            # else:
+            #     frame_outs[:, start+overlap//2:end-overlap//2] = sample[:, overlap//2:-overlap//2]
         
         # frame out: B x T x 88 x C
         # vel_outs = []
         # obtain metrics on full-length audio for batches
-        for n in range(batch['audio'].shape[0]):
-            step_len = batch['step_len'][n]
-            frame = frame_outs[n][:step_len].detach().cpu()
-            metrics = evaluate(frame, batch['label'][n][1:].detach().cpu()[:-1], band_eval=False)
-            for k, v in metrics.items():
-                test_metric[k].append(v)
-            print(f'\n note f1: {metrics["metric/note/f1"][0]:.4f}, note_with_offsets_f1: {metrics["metric_note_with_offsets_f1"][0]:.4f}', batch['path'])
-            print(f'\n note precision: {metrics["metric/note/precision"][0]:.4f}, note_with_offsets_precision : {metrics["metric/note-with-offsets/precision"][0]:.4f}', batch['path'])
-            print(f'\n note recall: {metrics["metric/note/recall"][0]:.4f}, note_with_offsets_recall : {metrics["metric/note-with-offsets/recall"][0]:.4f}', batch['path'])
+        # for n in range(batch['audio'].shape[0]):
+        #     step_len = batch['step_len'][n]
+        #     frame = frame_outs[n][:step_len].detach().cpu()
+        #     metrics = evaluate(frame, batch['label'][n][1:].detach().cpu()[:-1], band_eval=False)
+        #     for k, v in metrics.items():
+        #         test_metric[k].append(v)
+        #     print(f'\n note f1: {metrics["metric/note/f1"][0]:.4f}, note_with_offsets_f1: {metrics["metric_note_with_offsets_f1"][0]:.4f}', batch['path'])
+        #     print(f'\n note precision: {metrics["metric/note/precision"][0]:.4f}, note_with_offsets_precision : {metrics["metric/note-with-offsets/precision"][0]:.4f}', batch['path'])
+        #     print(f'\n note recall: {metrics["metric/note/recall"][0]:.4f}, note_with_offsets_recall : {metrics["metric/note-with-offsets/recall"][0]:.4f}', batch['path'])
         
         # self.log_dict(test_metric, prog_bar=True, logger=True, on_step=False, on_epoch=True,sync_dist=True)
 
         Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
-        for n in range(len(frame_outs)):
-            pred = frame_outs[n].detach().cpu().numpy()
-            np.savez(Path(self.test_save_path) / (Path(batch['path'][n]).stem + '.npz'), pred=pred)
-
+        for idx in range(len(frame_outs)):
+            out_fp = Path(self.test_save_path) / f'{idx}.npz'
+            if out_fp.exists():
+                print('already inference done, skip this index', {idx})
+            
+            pred = frame_outs[idx].detach().cpu().numpy()
+            print(pred.shape)
+            print(batch['arrangement'][0].shape)
+            output = {
+                'pred': pred,
+                'arrangement': batch['arrangement'][n].detach().cpu().numpy(),
+                'leadsheet': batch['leadsheet'][n].detach().cpu().numpy(),
+            }
+            np.savez(out_fp, **output)
+            
     def sample_func(self, audio, visualize_denoising=False):
         tic = time.time()
         # if self.use_ema:
@@ -201,3 +237,41 @@ class D3RM(DiscreteDiffusion):
                     "interval": "step",
                     "frequency": 1,
                     }}
+        
+    def predict_start(self, log_x_t, cond_audio, t, sampling=False):
+        # p(x0|xt)
+        from transcription.diffusion.trainer import log_onehot_to_index
+        x_t = log_onehot_to_index(log_x_t)
+        
+        from transcription.decoder import LSTM_NATTEN
+        if sampling==False:
+            if isinstance(self.encoder, LSTM_NATTEN):
+                feature = self.encoder(cond_audio, label_emb=self.decoder.label_emb)
+            else:
+                feature = self.encoder(cond_audio)
+                
+            out = self.decoder(x_t, feature, t)
+        if sampling==True:
+            if t[0].item() == self.num_timesteps-1:
+                if isinstance(self.encoder, LSTM_NATTEN):
+                    feature = self.encoder(cond_audio, label_emb=self.decoder.label_emb)
+                else:
+                    feature = self.encoder(cond_audio)
+                out = self.decoder(x_t, feature, t)
+                self.saved_encoder_features = feature
+            else:
+                assert self.saved_encoder_features is not None
+                out = self.decoder(x_t, self.saved_encoder_features, t)
+            if t[0].item() == 0: self.saved_encoder_features = None
+
+        assert out.size(0) == x_t.size(0)
+        assert out.size(1) == self.num_classes-1
+        assert out.size()[2:] == x_t.size()[1:]
+        log_pred = F.log_softmax(out.double(), dim=1).float() # softmax then log
+        batch_size = log_x_t.size()[0]
+        if self.zero_vector is None or self.zero_vector.shape[0] != batch_size:
+            self.zero_vector = torch.zeros(batch_size, 1, self.label_seq_len).type_as(log_x_t)- 70
+        log_pred = torch.cat((log_pred, self.zero_vector), dim=1)
+        log_pred = torch.clamp(log_pred, -70, 0)
+
+        return log_pred

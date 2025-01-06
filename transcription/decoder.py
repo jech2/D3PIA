@@ -19,11 +19,13 @@ class TransModel(nn.Module):
                 spatial_size: List[int],
                 num_state: int = 5,
                 classifier_free_guidance: bool = False,
+                features_embed_dim: int = 128,
+                num_class: int = 4,
                  ):
         super().__init__()
         # self.hidden_per_pitch = config.hidden_per_pitch
         self.label_embed_dim = label_embed_dim
-        features_embed_dim = 128 # from pretrained model
+        self.features_embed_dim = features_embed_dim 
         self.n_unit = lstm_dim
         self.n_layers = n_layers
         self.window = window
@@ -35,6 +37,7 @@ class TransModel(nn.Module):
         self.dilation = dilation
         self.num_state = num_state
         self.classifier_free_guidance = classifier_free_guidance
+        self.num_class = num_class
 
         # self.trans_model = NATTEN(config.hidden_per_pitch)
         self.trans_model = LSTM_NATTEN((label_embed_dim+features_embed_dim), 
@@ -48,7 +51,7 @@ class TransModel(nn.Module):
                                         n_layers=self.n_layers,
                                         cross_condition=self.cross_condition,
                                         )
-        self.output = nn.Linear(self.n_unit, 5)
+        self.output = nn.Linear(self.n_unit, self.num_class) 
         self.label_emb = nn.Embedding(num_state + 1, # +1 is for mask
                                       label_embed_dim)
         # classifier_free_guidance
@@ -66,14 +69,15 @@ class TransModel(nn.Module):
         # label (=x_t) : B x T*88 x 1
         # feature are concatanated with label as input to model
         batch = label.shape[0]
-        feature = feature.transpose(-2, -1) # B x T x 88 x H(=128)
+        # feature = feature.transpose(-2, -1) # B x T x 88 x H(=128)
         feature = feature.reshape(feature.shape[0], -1, feature.shape[-1]) # B x T*88 x H
         if self.use_cfg == True:
             if cond_drop_prob != 1: cond_drop_prob = self.cond_drop_prob
             keep_mask = th.zeros((batch,1,1), device=self.devices).float().uniform_(0, 1) < (1 - cond_drop_prob)
             null_cond_emb = self.null_feature_emb.repeat(label.shape[0], label.shape[1], 1) # B x T*88 x label_embed_dim
             feature = th.where(keep_mask, feature, null_cond_emb) 
-        assert label.max() <= self.label_emb.num_embeddings - 1 and label.min() >= 0, f"Label out of range: {label.max()} {label.min()}"
+        
+        assert label.max() <= self.label_emb.num_embeddings - 1 and label.min() >= 0, f"Label out of range: {label.max()} {label.min()} {self.label_emb.num_embeddings}"
         label_emb = self.label_emb(label) # B x T*88 x label_embed_dim
         input_feature = th.cat((label_emb, feature), dim=-1) 
         if self.cross_condition == 'self':
@@ -112,7 +116,9 @@ class LSTM_NATTEN(nn.Module):
                  n_unit=24,
                  n_head=4,
                  n_layers=2,
-                 cross_condition=False):
+                 cross_condition=False,
+                 type='decoder',
+        ):
         super().__init__()
         self.n_head = n_head
         self.n_layers = n_layers
@@ -124,6 +130,8 @@ class LSTM_NATTEN(nn.Module):
         self.spatial_size = spatial_size
         self.cross_condition = cross_condition
         self.dilation = dilation
+        self.module_type = type
+        
         if self.natten_dir == '1d':
             self.na_1t = nn.ModuleList([NeighborhoodAttention1D_diffusion(n_unit, 1, window[0],
                                                                         spatial_size=self.spatial_size,
@@ -162,18 +170,25 @@ class LSTM_NATTEN(nn.Module):
                                      ] * (n_layers // 2))
 
 
-    def forward(self, x, cond=None, t=None):
+    def forward(self, x, cond=None, t=None, label_emb=None):
         """
         x shape : B x T*88 x n_unit
         cond shape : B x T*88 x feature_embed_dim(=128)
         """
+        
+        if self.module_type == 'encoder' and label_emb is not None:
+            x = x.long()
+            x = label_emb(x)
+        
         B = x.shape[0]
         H = x.shape[-1]
-        T = x.shape[1]//88
-        x = x.reshape(B, T, 88, H) # B x T x 88 x H
+        if self.module_type == 'encoder':
+            T = x.shape[1]
+        elif self.module_type == 'decoder':
+            T = x.shape[1]//88
+            x = x.reshape(B, T, 88, H) # B x T x 88 x H
         x = x.permute(0, 2, 1, 3).reshape(B*88, T, H) # B*88 x T x H
         x, c = self.lstm(x)
-
         # if use natten1d
         if self.natten_dir == '1d':
             for layer_1t, layer_1f in zip(self.na_1t, self.na_1f):
