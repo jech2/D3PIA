@@ -7,3 +7,7 @@ logs/
 checkpoints/
 lightning_logs/
 results/
+wandb/
+.python-version
+data/
+*/__pycache__/
