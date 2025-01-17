@@ -97,10 +97,12 @@ class EMACallback(Callback):
                 param.data.copy_(s_param.data)
 
     def on_test_epoch_start(self, trainer, pl_module): # TODO: check if this works
-        "Use EMA parameters during testing"
+        # if self.ema is None:
+            # self.ema = ModelEmaV2(pl_module, decay=self.decay, device=None)
+        # "Use EMA parameters during testing"
         self.store(pl_module.parameters())  # Save original parameters
         self.copy_to(self.ema.module.parameters(), pl_module.parameters())  # Apply EMA weights
 
     def on_test_epoch_end(self, trainer, pl_module):  # TODO: check if this works
-        "Restore original parameters after testing"
+        # "Restore original parameters after testing"
         self.restore(pl_module.parameters())

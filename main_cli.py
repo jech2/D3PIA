@@ -45,6 +45,7 @@ class D3RMCLI(LightningCLI):
             save_top_k=7,
             save_last=True,
             verbose=True,
+            # save_on_train_epoch_end=True,
             filename='{step:07}-{metric_note_with_offsets_f1:.4f}') # python recognized '/', '-' as '_'
 
         self.trainer.logger = wandb_logger

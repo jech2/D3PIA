@@ -124,4 +124,5 @@ class Pop1k7_DataModule(pl.LightningDataModule):
                         #   batch_size=self.batch_size,
                           num_workers=self.num_workers,
                           pin_memory=False,
-                          collate_fn=PadCollate(hop_size=self.hop_size))
+                        #   collate_fn=PadCollate(hop_size=self.hop_size)
+                          )

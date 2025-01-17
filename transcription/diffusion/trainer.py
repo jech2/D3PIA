@@ -7,7 +7,7 @@
 
 import math
 import torch
-from torch import nn
+from torch import nn, Tensor
 import torch.nn.functional as F
 import importlib
 
@@ -93,6 +93,7 @@ class DiscreteDiffusion(pl.LightningModule):
         no_mask: bool,
         sample_from_fully_masked: bool,
         reverse_sampling: bool,
+        repaint: int,
     ):
         super().__init__()
 
@@ -106,6 +107,7 @@ class DiscreteDiffusion(pl.LightningModule):
         self.auxiliary_loss_weight = auxiliary_loss_weight
         self.adaptive_auxiliary_loss = adaptive_auxiliary_loss
         self.mask_weight = mask_weight
+        self.repaint = repaint
         if onset_suppress_sample:
             self.onset_suppress = onset_suppress_sample
         else : self.onset_suppress = False
@@ -368,10 +370,12 @@ class DiscreteDiffusion(pl.LightningModule):
         return torch.clamp(log_EV_xtmin_given_xt_given_xstart, -70, 0)
 
 
-    def p_pred(self, log_x, cond_audio, t):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
+    def p_pred(self, log_x, cond_audio, t, target=None, mask=None, repaint=1):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
         # p_pred for sampling
         if self.parametrization == 'x0':
             log_x_recon = self.predict_start(log_x, cond_audio, t, sampling=True)
+            if target is not None and mask is not None:
+                log_x_recon = log_x_recon * (1 - mask) + target * mask
             if self.reverse_sampling:
                 log_model_pred = self.q_posterior_reverse(log_x_start=log_x_recon, log_x_t=log_x, t=t)
             elif not self.reverse_sampling:
@@ -381,13 +385,48 @@ class DiscreteDiffusion(pl.LightningModule):
         else:
             raise ValueError
         return log_model_pred
+    
+    def p_pred_inpainting(self, log_x, cond_audio, t, prev_log_x, mask, repaint:int = 10):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
+        # p_pred for sampling
+        for r in range(repaint):
+            if self.parametrization == 'x0':
+                log_x_recon = self.predict_start(log_x, cond_audio, t, sampling=True)
+                log_x_recon = log_x_recon * (1 - mask) + prev_log_x * mask
+                if self.reverse_sampling:
+                    log_model_pred = self.q_posterior_reverse(log_x_start=log_x_recon, log_x_t=log_x, t=t)
+                elif not self.reverse_sampling:
+                    log_model_pred = self.q_posterior(log_x_start=log_x_recon, log_x_t=log_x, t=t)
+            elif self.parametrization == 'direct':
+                log_model_pred = self.predict_start(log_x, cond_audio, t, sampling=True)
+            else:
+                raise ValueError
+            if r < repaint - 1:
+                log_model_pred = self.q_pred_one_timestep(log_model_pred, t)
+        return log_model_pred
+    
 
     @torch.no_grad()
     def p_sample(self, log_x, cond_audio, t, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
         model_log_prob = self.p_pred(log_x, cond_audio, t) # onset, reonset -> 2, 4 (0~4)
         if self.onset_suppress: # suppress onset, offsets when sampling
-            model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
-            model_log_prob[:, 4, :] = model_log_prob[:, 4, :] * (1 + self.onset_suppress)
+            model_log_prob[:, 0, :] = model_log_prob[:, 0, :] * (1 + self.onset_suppress)
+            # model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
+        out = self.log_sample_categorical(model_log_prob)
+        return out
+
+    @torch.no_grad()
+    def p_sample_inpainting(self, log_x, cond_audio, t, prev_log_x, inpainting_ratio, shape, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
+        prev_log_x_reshape = prev_log_x.reshape((shape[0], -1, shape[1], shape[2])) # B x class x T x 88
+        source = prev_log_x_reshape[:, :, int(shape[1]*inpainting_ratio):, :] 
+        empty = torch.zeros(prev_log_x_reshape.shape, dtype=prev_log_x_reshape.dtype, device=prev_log_x_reshape.device)[:, :, :int(shape[1]*(1-inpainting_ratio)), :]
+        mask = torch.cat([torch.ones_like(source), torch.zeros_like(empty)], dim=-2) # B x class x T x 88
+        prev_log_x = torch.cat([source, empty], dim=-2)
+        mask = mask.reshape((mask.shape[0], mask.shape[1], -1)) # B x class x T*88
+        prev_log_x = prev_log_x.reshape((mask.shape[0], mask.shape[1], -1)) # B x class x T*88
+        model_log_prob = self.p_pred_inpainting(log_x, cond_audio, t, prev_log_x, mask, self.repaint) # onset, reonset -> 2, 4 (0~4)
+        if self.onset_suppress: # suppress onset, offsets when sampling
+            model_log_prob[:, 0, :] = model_log_prob[:, 0, :] * (1 + self.onset_suppress)
+            # model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
         out = self.log_sample_categorical(model_log_prob)
         return out
 
@@ -527,19 +566,12 @@ class DiscreteDiffusion(pl.LightningModule):
     def sample(
             self,
             audio,
-            filter_ratio = 0.5,
-            temperature = 1.0,
-            return_att_weight = False,
             return_logits = False,
-            label_logits = None,
-            print_log = True,
-            visualize_denoising = False,
-            **kwargs):
+            visualize_denoising = False):
 
         batch_size = audio.shape[0]
-    
         device = self.log_at.device
-        start_step = int(self.num_timesteps * filter_ratio)
+        start_step = 0
 
         cond_audio = audio # no condition for now
         labels = [] # for plotting labels getting denoised
@@ -566,6 +598,46 @@ class DiscreteDiffusion(pl.LightningModule):
                     if visualize_denoising:
                         labels.append(log_z.argmax(1).cpu().numpy())
 
+        else: 
+            raise ValueError("Not implemented yet")
+        
+
+        label_token = log_onehot_to_index(log_z)
+        
+        output = {'label_token': label_token}
+        if return_logits:
+            output['logits'] = torch.exp(log_z)
+        return output, labels
+
+    def sample_inpainting(
+            self,
+            leadsheet: Tensor, # leadsheet
+            prev_piano,
+            inpainting_ratio: float,
+            shape,
+            return_logits = False,
+            visualize_denoising = False):
+        batch_size = leadsheet.shape[0]
+        device = self.log_at.device
+        cond_leadsheet = leadsheet # no condition for now
+        prev_log_z = index_to_log_onehot(prev_piano.to(torch.int64), self.num_classes)
+        labels = [] # for plotting labels getting denoised
+        start_step = 0
+
+        if start_step == 0:
+            # use full mask sample
+            zero_logits = torch.zeros((batch_size, self.num_classes-1, self.shape),device=device)
+            one_logits = torch.ones((batch_size, 1, self.shape),device=device)
+            mask_logits = torch.cat((zero_logits, one_logits), dim=1) # B, class, token_len
+            log_z = torch.log(mask_logits)
+
+            start_step = self.num_timesteps
+            with torch.no_grad():
+                for diffusion_index in range(start_step-1, -1, -1):
+                    t = torch.full((batch_size,), diffusion_index, device=device, dtype=torch.long) # make batch tensor filled with value 't'
+                    log_z = self.p_sample_inpainting(log_z, cond_leadsheet, t, prev_log_z, inpainting_ratio, shape)     # log_z is log_onehot
+                    if visualize_denoising:
+                        labels.append(log_z.argmax(1).cpu().numpy())
         else: 
             raise ValueError("Not implemented yet")
         

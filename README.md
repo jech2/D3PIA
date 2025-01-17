@@ -32,7 +32,8 @@ python3 main_cli.py fit -c ./configs/D3RM_cli.yaml
 
 ## Inference
 ```shell
-python3 main_cli.py test -c ./logs/
+python3 main_cli.py test -c ./logs/{exp_id}/config.yaml
+# you need to update ckpt_path in ckpt file
 ```
 
 <!-- ## Acknowledge -->

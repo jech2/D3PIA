@@ -49,13 +49,11 @@ model:
   adaptive_auxiliary_loss: true
   mask_weight: [1, 1]
   classifier_free_guidance: False
-  onset_suppress_sample: True
+  onset_suppress_sample: False
   onset_weight_kl: False
   no_mask: False
   sample_from_fully_masked: True
   reverse_sampling: True
-  inpainting_ratio: 0.5 # how much to inpaint
-  repaint: 5
 
   encoder:
     class_path: transcription.decoder.LSTM_NATTEN
@@ -64,11 +62,11 @@ model:
       timestep_type: null
       diffusion_step: 100
       natten_direction: 2d
-      dilation: [1,2,4,8,1,2,4,8]
+      dilation: [1,2,4,8,16,1,2,4,8,16]
       spatial_size: [313,88]
-      window: [9,9,9,9,9,9,9,9]
-      n_unit: 48
-      n_layers: 8
+      window: [5,5,5,5,5,5,5,5,5,5]
+      n_unit: 96
+      n_layers: 10
       cross_condition: self
       type: encoder
 
@@ -76,10 +74,10 @@ model:
     class_path: transcription.decoder.TransModel
     init_args:
       label_embed_dim: 4
-      lstm_dim: 48
-      n_layers: 8
-      window: [9,9,9,9,9,9,9,9]
-      dilation: [1,2,4,8,1,2,4,8]
+      lstm_dim: 96
+      n_layers: 10
+      window: [5,5,5,5,5,5,5,5,5,5]
+      dilation: [1,2,4,8,16,1,2,4,8,16]
       condition_method: self
       diffusion_step: 100
       timestep_type: adalayernorm
@@ -88,7 +86,7 @@ model:
       num_state: 4
       num_class: 3
       classifier_free_guidance: False
-      features_embed_dim: 48
+      features_embed_dim: 96
 
   optimizer:
     class_path: torch.optim.AdamW

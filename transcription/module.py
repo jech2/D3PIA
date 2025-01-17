@@ -10,6 +10,7 @@ from torch.nn import functional as F
 from termcolor import colored
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 # from adabelief_pytorch import AdaBelief
 
@@ -17,6 +18,9 @@ from transcription.diffusion.trainer import DiscreteDiffusion
 from transcription.diffusion.ema import EMA
 from transcription.constants import HOP
 from transcription.evaluate import evaluate
+
+from transcription.diffusion.trainer import log_onehot_to_index
+from transcription.decoder import LSTM_NATTEN
 
 from lightning.pytorch.cli import OptimizerCallable, LRSchedulerCallable, ReduceLROnPlateau
 
@@ -35,20 +39,16 @@ class D3RM(DiscreteDiffusion):
                 pretrained_encoder_path: str,
                 freeze_encoder: bool,
                 test_save_path: str,
-                # use_ema: bool,
-                # ema_decay: float,
-                # ema_update_interval: int,
+                inpainting_ratio: float,
                 optimizer: OptimizerCallable = torch.optim.AdamW,
                 scheduler: LRSchedulerCallable = ReduceLROnPlateau,
                  *args, **kwargs):
         super().__init__(encoder=encoder, decoder=decoder, *args, **kwargs)
         self.save_hyperparameters() # for wandb logging
-        # self.encoder = encoder
-        # self.decoder = decoder
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.test_save_path = test_save_path
-        # self.use_ema = use_ema
+        self.inpainting_ratio = inpainting_ratio
         if encoder_parameters == "pretrained":
             ckpt = torch.load(pretrained_encoder_path)
             self.encoder.load_state_dict(ckpt['model_state_dict'], strict=False)
@@ -59,18 +59,10 @@ class D3RM(DiscreteDiffusion):
                 param.requires_grad = False
             print(colored('Freeze encoder', 'blue', attrs=['bold']))
         else: print(colored('Train encoder', 'blue', attrs=['bold']))
-        # if self.use_ema: # TODO: check if EMA are also well-saved and loaded in ckpt
-        #     print(colored(f'Use EMA, load in {self.device}', 'blue', attrs=['bold']))
-        #     self.ema_encoder = EMA(self.encoder, decay=ema_decay, update_interval=ema_update_interval, device=self.device)
-        #     self.ema_decoder= EMA(self.decoder, decay=ema_decay, update_interval=ema_update_interval, device=self.device)
         self.step = 0
         self.validation_step_outputs = defaultdict(list)
 
     def training_step(self, batch, batch_idx):
-        # audio = batch['audio'].to(self.device) # B x L
-        # label = batch['label'][:,1:,:].to(self.device) # B x T x 88
-        # _ = batch['velocity'].to(device)
-        
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
 
@@ -81,14 +73,9 @@ class D3RM(DiscreteDiffusion):
         self.log('train/diffusion_loss', disc_diffusion_loss['loss'].mean(), prog_bar=True, logger=True, on_step=True, on_epoch=False)
         self.log('lr', self.trainer.optimizers[0].param_groups[0]['lr'])
 
-        # if self.use_ema:
-        #     self.ema_encoder.update(iteration=self.step)
-        #     self.ema_decoder.update(iteration=self.step)
         return disc_diffusion_loss['loss']
     
     def validation_step(self, batch, batch_idx):
-        # audio = batch['audio'].to(self.device)
-        # label = batch['label'][:,1:,:].to(self.device)
 
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
@@ -123,108 +110,97 @@ class D3RM(DiscreteDiffusion):
         self.validation_step_outputs.clear()
     
     def test_step(self, batch, batch_idx):
+        out_fp = Path(self.test_save_path) / f'{batch_idx}.npz'
+        if out_fp.exists():
+            print('already inference done, skip this index', {batch_idx})
+            return
+                    
         leadsheet = batch['leadsheet'].to(self.device)   
-        B, n_step, _ = leadsheet.shape
-        # audio = batch['audio'].to(self.device)
-        # B, audio_len = audio.shape[0], audio.shape[1]
+        B, total_frame, _ = leadsheet.shape
         test_metric = defaultdict(list)
 
-        frame_outs = [] 
-        # n_step = (audio_len - 1) // HOP + 1
-        # shape = (audio.shape[0], n_step, 88)
         shape = leadsheet.shape
         seg_len = 313
-        overlap = 50
+        hop_size = seg_len * (1-self.inpainting_ratio)
 
-        n_seg = (n_step - overlap) // (seg_len - overlap) + 1
+        n_seg = int((total_frame - seg_len) // hop_size + 1)
 
         frame_outs = torch.zeros(shape, dtype=torch.int)
 
         for seg in tqdm(range(n_seg)):
-        # for seg in tqdm(range(2)):
-            start = seg * (seg_len - overlap)
+            start = int(seg * hop_size)
             end = start + seg_len
-            start = seg * (seg_len - overlap)
-            end = start + seg_len
-            if end > n_step:
-                pad_len = end - n_step - 1
-                leadsheet_pad = F.pad(leadsheet[:, int(start):], (0, 0, pad_len, 1))
-                leadsheet_pad = leadsheet_pad.to(self.device)
+            leadsheet_pad = leadsheet[:, int(start):int(end)].to(self.device)
+            # print(start, end, seg_len, seg, hop_size, leadsheet_pad.shape)
+            # print(leadsheet_pad.shape)
+            if seg == 0:
+                frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None)
+                prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
             else:
-                leadsheet_pad = leadsheet[:, int(start):int(end)].to(self.device)
-
-            print(leadsheet_pad.shape)
-            # if end > n_step:
-            #     pad_len = n_step*HOP - audio_len
-            #     start = n_step - seg_len
-            #     end = n_step
-            #     audio_pad = F.pad(audio[:, int(start*HOP):], (0, pad_len))
-            #     audio_pad = audio_pad.to(self.device)
-            # else:
-            #     audio_pad = audio[:, int(start*HOP):int(end*HOP)].to(self.device)
-
-            frame_out, _ = self.sample_func(leadsheet_pad)
-            # frame_out, _ = self.sample_func(audio_pad)
+                frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, visualize_denoising=True)
+                # Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
+                # for idx in range(len(frame_out)):
+                #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
+                #     plt.figure(figsize=(8, 4))
+                #     plt.imshow(prev_piano[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
+                #     plt.title(f'Piano roll {idx}')
+                #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_prev_piano.png')
+                #     plt.close()
+                   
+                #     plt.figure(figsize=(8, 4))
+                #     plt.imshow(labels[idx].T, origin='lower', aspect='auto')
+                #     plt.title(f'Piano roll {idx}')
+                #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_labels.png')
+                #     plt.close() 
+                
+                prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
+                # save labels as visualized piano roll using matplotlib
+                # print(len(frame_out), frame_out.shape)
+                
+                # for idx in range(len(frame_out)):
+                #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
+                #     plt.figure(figsize=(8, 4))
+                #     plt.imshow(prev_piano[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
+                #     plt.title(f'Piano roll {idx}')
+                #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
+                #     plt.close()
+                    
+                #     # leadsheet
+                #     plt.figure(figsize=(8,4))
+                #     plt.imshow(leadsheet_pad[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
+                #     plt.title(f'Piano roll {idx}')
+                #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_leadsheet.png')
+                #     plt.close()
+                
             sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
-            if end > n_step:
-                frame_outs[:, start:] = sample[:, :n_step-start]
-            else:
-                frame_outs[:, start:end] = sample[:, :seg_len]
-            # if seg == 0:
-            #     frame_outs[:, :end-overlap//2] = sample[:, :-overlap//2]
-            # elif seg == n_seg - 1:
-            #     frame_outs[:, start+overlap//2:] = sample[:, overlap//2:n_step-start]
-            # else:
-            #     frame_outs[:, start+overlap//2:end-overlap//2] = sample[:, overlap//2:-overlap//2]
-        
-        # frame out: B x T x 88 x C
-        # vel_outs = []
-        # obtain metrics on full-length audio for batches
-        # for n in range(batch['audio'].shape[0]):
-        #     step_len = batch['step_len'][n]
-        #     frame = frame_outs[n][:step_len].detach().cpu()
-        #     metrics = evaluate(frame, batch['label'][n][1:].detach().cpu()[:-1], band_eval=False)
-        #     for k, v in metrics.items():
-        #         test_metric[k].append(v)
-        #     print(f'\n note f1: {metrics["metric/note/f1"][0]:.4f}, note_with_offsets_f1: {metrics["metric_note_with_offsets_f1"][0]:.4f}', batch['path'])
-        #     print(f'\n note precision: {metrics["metric/note/precision"][0]:.4f}, note_with_offsets_precision : {metrics["metric/note-with-offsets/precision"][0]:.4f}', batch['path'])
-        #     print(f'\n note recall: {metrics["metric/note/recall"][0]:.4f}, note_with_offsets_recall : {metrics["metric/note-with-offsets/recall"][0]:.4f}', batch['path'])
-        
-        # self.log_dict(test_metric, prog_bar=True, logger=True, on_step=False, on_epoch=True,sync_dist=True)
+            frame_outs[:, int(start+seg_len*(1-self.inpainting_ratio)):end] = sample[:, int(seg_len*(1-self.inpainting_ratio)):seg_len]
 
+        
         Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
         for idx in range(len(frame_outs)):
-            out_fp = Path(self.test_save_path) / f'{idx}.npz'
-            if out_fp.exists():
-                print('already inference done, skip this index', {idx})
             
             pred = frame_outs[idx].detach().cpu().numpy()
             print(pred.shape)
-            print(batch['arrangement'][0].shape)
+            print('arr shape', batch['arrangement'][0].shape)
             output = {
                 'pred': pred,
-                'arrangement': batch['arrangement'][n].detach().cpu().numpy(),
-                'leadsheet': batch['leadsheet'][n].detach().cpu().numpy(),
+                'arrangement': batch['arrangement'][idx].detach().cpu().numpy(),
+                'leadsheet': batch['leadsheet'][idx].detach().cpu().numpy(),
             }
             np.savez(out_fp, **output)
             
-    def sample_func(self, audio, visualize_denoising=False):
+    def sample_func(self, leadsheet, prev_piano, visualize_denoising=False):
         tic = time.time()
-        # if self.use_ema:
-        #     self.ema_encoder.modify_to_inference()
-        #     self.ema_decoder.modify_to_inference()
-        #     suffix = '_ema'
-        # else:
-        #     suffix = ''
-        with torch.no_grad():
-            samples, labels = self.sample(audio,
-                                        filter_ratio=0,
-                                        visualize_denoising=visualize_denoising
-                                        ) 
-
-            # if self.use_ema:
-            #     self.ema_encoder.modify_to_train()
-            #     self.ema_decoder.modify_to_train()
+        if self.inpainting_ratio == 0 or prev_piano is None:
+            samples, labels = self.sample(leadsheet, 
+                                        visualize_denoising=visualize_denoising)
+        else:
+            with torch.no_grad():
+                samples, labels = self.sample_inpainting(leadsheet, prev_piano, 
+                                            inpainting_ratio=self.inpainting_ratio,
+                                            visualize_denoising=visualize_denoising,
+                                            shape=leadsheet.shape)
+        
         return samples['label_token'], labels
 
     def configure_optimizers(self):
@@ -240,10 +216,8 @@ class D3RM(DiscreteDiffusion):
         
     def predict_start(self, log_x_t, cond_audio, t, sampling=False):
         # p(x0|xt)
-        from transcription.diffusion.trainer import log_onehot_to_index
         x_t = log_onehot_to_index(log_x_t)
         
-        from transcription.decoder import LSTM_NATTEN
         if sampling==False:
             if isinstance(self.encoder, LSTM_NATTEN):
                 feature = self.encoder(cond_audio, label_emb=self.decoder.label_emb)
@@ -262,7 +236,7 @@ class D3RM(DiscreteDiffusion):
             else:
                 assert self.saved_encoder_features is not None
                 out = self.decoder(x_t, self.saved_encoder_features, t)
-            if t[0].item() == 0: self.saved_encoder_features = None
+            # if t[0].item() == 0: self.saved_encoder_features = None
 
         assert out.size(0) == x_t.size(0)
         assert out.size(1) == self.num_classes-1
