@@ -42,7 +42,7 @@ model:
   # ema_decay: 0.99
   # ema_update_interval: 25
 
-  label_seq_len: 27544
+  label_seq_len: 11264 # to 128 * 88
   diffusion_step: 100
   gamma_bar_T: 0.6
   auxiliary_loss_weight: 5.0e-4
@@ -65,7 +65,7 @@ model:
       diffusion_step: 100
       natten_direction: 2d
       dilation: [1,2,4,8,16,1,2,4,8,16]
-      spatial_size: [313,88]
+      spatial_size: [128,88]
       window: [5,5,5,5,5,5,5,5,5,5]
       n_unit: 96
       n_layers: 10
@@ -84,7 +84,7 @@ model:
       diffusion_step: 100
       timestep_type: adalayernorm
       natten_direction: 2d
-      spatial_size: [313,88]
+      spatial_size: [128,88]
       num_state: 4
       num_class: 3
       classifier_free_guidance: False
@@ -109,18 +109,20 @@ model:
 
 
 data:
-  data_dir: './data/pop1k7'
+  data_dir: './data/POP909-Dataset/POP909_processed'
   batch_size: 8 
   num_workers: 12
   # train: True
   # validation: True
   # test: True
   # predict: False
-  train_seq_len: 313
-  valid_seq_len: 313
+  train_seq_len: 128
+  valid_seq_len: 128
   # train_seq_len: 160256
   # valid_seq_len: 160256
   # sampling_rate: 16000
   hop_size: 512
   transpose: true
   pr_res: 16
+
+  

@@ -61,7 +61,7 @@ def cli_main():
     # cli = D3RMCLI(D3RM, MAESTRO_V3_DataModule,
     #             #   save_config_kwargs={"overwrite": True}, #  save_config_callback=None # when using wandb, saving config leads to conflicts.
     #               )
-    data_module = Pop1k7_DataModule
+    data_module = POP909_DataModule
     cli = D3RMCLI(D3RM, data_module)
 
 if __name__ == "__main__":

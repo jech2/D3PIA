@@ -23,7 +23,7 @@ import numpy as np
 from midisym.parser.utils import get_ticks_to_seconds_grid
 from midisym.analysis.utils import get_all_marker_start_end_time
 from midisym.analysis.chord.chord_event import ChordEvent
-from midisym.converter.matrix import get_absolute_time_mat
+from midisym.converter.matrix import get_absolute_time_mat, get_grid_quantized_time_mat
 
 from midisym.converter.constants import N_PITCH, PITCH_OFFSET, PR_RES, ONSET, SUSTAIN, CHORD_OFFSET, POP1k7_MELODY, POP1k7_ARRANGEMENT
 from midisym.parser.midi import MidiParser
@@ -581,7 +581,7 @@ class ViennaCorpus(PianoSampleDataset):
     
 class Pop1k7(Dataset):
     def __init__(self, path='data/pop1k7', groups=None, sequence_length=313, seed=1, 
-                 random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False):
+                 random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False, chord_style='chorder'):
         self.path = path
         self.groups = groups if groups is not None else self.available_groups()
         self.random_sample = random_sample
@@ -601,7 +601,7 @@ class Pop1k7(Dataset):
         
         self.load_mode=load_mode
         self.pr_res = pr_res
-        
+        self.chord_style = chord_style
         # outputs
         self.frame_features = ['label', 'pedal_label', 'velocity', 
                                'last_onset_time', 'last_onset_vel']
@@ -614,6 +614,7 @@ class Pop1k7(Dataset):
             self.file_list[group] = self.files(group)
             for input_pair in tqdm(self.file_list[group], desc='load files'):
                 self.data_path.append(input_pair)
+        self.initialize()
     
     @classmethod
     def available_groups(cls):
@@ -634,15 +635,18 @@ class Pop1k7(Dataset):
             self.load(input_path)
         
     def load(self, input_path):
+        if isinstance(input_path, Path):
+            input_path = str(input_path)
         npy_path = input_path.replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
         # # remove prev npy file
         # if os.path.exists(npy_path):
         #     os.remove(npy_path)
             
         if not os.path.exists(npy_path):
+            print('converting midi to piano roll npy')
             midi_parser = MidiParser(input_path, use_symusic=False)
             sym_obj = midi_parser.sym_music_container
-            piano_rolls, piano_roll_xs, note_infos = get_absolute_time_mat(sym_obj, pr_res=self.pr_res)
+            piano_rolls, piano_roll_xs, note_infos = get_absolute_time_mat(sym_obj, pr_res=self.pr_res, chord_style=self.chord_style)
  
             np.save(npy_path, piano_rolls)
             
@@ -712,10 +716,10 @@ class Pop1k7(Dataset):
             cropped_piano_rolls = piano_rolls[:, random_idx:random_idx+self.sample_length]
             
             assert cropped_piano_rolls.shape[1] == self.sample_length
+            # assert (cropped_piano_rolls != 0).any()
             
         else:
             cropped_piano_rolls = piano_rolls
-
 
         if self.groups == ['train'] and self.transpose and random.random() < 0.5:
             # considering piano roll pitch min max, reset the transpose value
@@ -738,13 +742,13 @@ class Pop1k7(Dataset):
             # for i, piano_roll in enumerate(piano_rolls):
             #     import matplotlib.pyplot as plt
             #     os.makedirs('tests/sample', exist_ok=True)
-            #     # # 전체 피아노 롤
-            #     # plt.figure(figsize=(12, 6))  # 캔버스 크기
-            #     # plt.imshow(piano_roll.T, aspect="auto", origin="lower", interpolation="nearest")
-            #     # plt.xlabel("Time (frame)", fontsize=12)
-            #     # plt.ylabel("Pitch", fontsize=12)
-            #     # plt.title("Full Piano Roll", fontsize=14)
-            #     # plt.savefig(f"tests/sample/absolute_time_mat_{i}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+            #     # 전체 피아노 롤
+            #     plt.figure(figsize=(12, 6))  # 캔버스 크기
+            #     plt.imshow(piano_roll.T, aspect="auto", origin="lower", interpolation="nearest")
+            #     plt.xlabel("Time (frame)", fontsize=12)
+            #     plt.ylabel("Pitch", fontsize=12)
+            #     plt.title("Full Piano Roll", fontsize=14)
+            #     plt.savefig(f"tests/sample/absolute_time_mat_{i}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
 
             #     # 랜덤 프레임 피아노 롤
             #     plt.figure(figsize=(12, 6))  # 캔버스 크기
@@ -752,15 +756,22 @@ class Pop1k7(Dataset):
             #     plt.xlabel("Time (frame)", fontsize=12)
             #     plt.ylabel("Pitch", fontsize=12)
             #     plt.title("Random Frame Piano Roll", fontsize=14)
+            #     plt.savefig(f"tests/sample/absolute_time_mat_{index}_random.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+            #     plt.close()
+            #     # 랜덤 프레임 피아노 롤
+            #     plt.figure(figsize=(12, 6))  # 캔버스 크기
+            #     plt.imshow(cropped_piano_rolls[1].T, aspect="auto", origin="lower", interpolation="nearest")
+            #     plt.xlabel("Time (frame)", fontsize=12)
+            #     plt.ylabel("Pitch", fontsize=12)
+            #     plt.title("Random Frame Piano Roll", fontsize=14)
             #     plt.savefig(f"tests/sample/absolute_time_mat_{index}_random_ls.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+            #     plt.close()
 
         return {
             'arrangement': cropped_piano_rolls[0],
             'leadsheet': cropped_piano_rolls[1],
         }
-        
-
-            
+                    
     def sort_by_length(self):
         step_lens = []
         for n in range(len(self)):
@@ -770,4 +781,111 @@ class Pop1k7(Dataset):
             step_lens.append(step_len)
         self.data_path = [x for _, x in sorted(zip(step_lens, self.data_path),
                           key=lambda pair: pair[0], reverse=True)]
+
+class POP909(Pop1k7):
+    def __init__(self, path='data/POP909-Dataset', groups=None, sequence_length=313, seed=1, 
+                 random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False, chord_style='pop909'):
+        super().__init__(path, groups, sequence_length, seed, random_sample, transform, load_mode, pr_res, transpose, chord_style) 
+
+    @classmethod
+    def available_groups(cls):
+        return ['train', 'valid', 'test']
+    
+    def files(self, group):
+        split = Path(self.path) / group
         
+        mid_files = list(split.glob('**/*.mid'))
+        mid_files = [str(el) for el in mid_files]
+
+        return mid_files
+    
+    def load(self, input_path):
+        if isinstance(input_path, Path):
+            input_path = str(input_path)
+        npy_path = input_path.replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
+        # # remove prev npy file
+        # if os.path.exists(npy_path):
+        #     os.remove(npy_path)
+            
+        if not os.path.exists(npy_path):
+            print('converting midi to piano roll npy')
+            midi_parser = MidiParser(input_path, use_symusic=False)
+            sym_obj = midi_parser.sym_music_container
+            # piano_rolls, piano_roll_xs, note_infos = get_absolute_time_mat(sym_obj, pr_res=self.pr_res, chord_style=self.chord_style)
+ 
+            piano_rolls, _ = get_grid_quantized_time_mat(sym_obj, chord_style='pop909', add_chord_labels_to_pr=True)
+
+            np.save(npy_path, piano_rolls)
+
+    def __getitem__(self, index):
+        piano_roll_fp = self.data_path[index].replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
+        
+        piano_rolls = np.load(piano_roll_fp)
+        
+        if self.sample_length is not None:
+            random_idx = np.random.randint(0, (piano_rolls.shape[1]-self.sample_length + 1) / self.pr_res)
+            
+            random_idx = random_idx * self.pr_res
+
+            cropped_piano_rolls = piano_rolls[:, random_idx:random_idx+self.sample_length]
+            
+            assert cropped_piano_rolls.shape[1] == self.sample_length
+            # assert (cropped_piano_rolls != 0).any()
+            
+        else:
+            cropped_piano_rolls = piano_rolls
+
+        if self.groups == ['train'] and self.transpose and random.random() < 0.5:
+            # considering piano roll pitch min max, reset the transpose value
+            min_pitch, max_pitch = self.get_min_max_pitch(cropped_piano_rolls)
+            if min_pitch is not None:
+                min_transpose = max(-min_pitch, -6)
+            else:
+                min_transpose = -6
+            
+            if max_pitch is not None:
+                max_transpose = min(87 - max_pitch, 6)
+            else:
+                max_transpose = 6
+
+            transpose_val = random.randint(min_transpose, max_transpose + 1)            
+
+            cropped_piano_rolls = self.transpose_pianoroll(cropped_piano_rolls, transpose_val)
+
+            # cropped_piano_rolls = cropped_piano_rolls.astype(np.float32)
+
+            # for i, piano_roll in enumerate(piano_rolls):
+            #     import matplotlib.pyplot as plt
+            #     os.makedirs('tests/sample', exist_ok=True)
+            #     # 전체 피아노 롤
+            #     plt.figure(figsize=(12, 6))  # 캔버스 크기
+            #     plt.imshow(piano_roll.T, aspect="auto", origin="lower", interpolation="nearest")
+            #     plt.xlabel("Time (frame)", fontsize=12)
+            #     plt.ylabel("Pitch", fontsize=12)
+            #     plt.title("Full Piano Roll", fontsize=14)
+            #     plt.savefig(f"tests/sample/absolute_time_mat_{i}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+
+            #     # 랜덤 프레임 피아노 롤
+            #     plt.figure(figsize=(12, 6))  # 캔버스 크기
+            #     plt.imshow(cropped_piano_rolls[0].T, aspect="auto", origin="lower", interpolation="nearest")
+            #     plt.xlabel("Time (frame)", fontsize=12)
+            #     plt.ylabel("Pitch", fontsize=12)
+            #     plt.title("Random Frame Piano Roll", fontsize=14)
+            #     plt.savefig(f"tests/sample/absolute_time_mat_{index}_random.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+            #     plt.close()
+            #     # 랜덤 프레임 피아노 롤
+            #     plt.figure(figsize=(12, 6))  # 캔버스 크기
+            #     plt.imshow(cropped_piano_rolls[1].T, aspect="auto", origin="lower", interpolation="nearest")
+            #     plt.xlabel("Time (frame)", fontsize=12)
+            #     plt.ylabel("Pitch", fontsize=12)
+            #     plt.title("Random Frame Piano Roll", fontsize=14)
+            #     plt.savefig(f"tests/sample/absolute_time_mat_{index}_random_ls.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+            #     plt.close()
+
+        cropped_piano_rolls = th.tensor(cropped_piano_rolls).long()
+
+
+        return {
+            'arrangement': cropped_piano_rolls[0],
+            'leadsheet': cropped_piano_rolls[1],
+        }

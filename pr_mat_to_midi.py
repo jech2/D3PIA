@@ -8,52 +8,52 @@ from midisym.parser.container import Instrument
 from pathlib import Path
 
 def pianoroll2notes(piano_rolls, ticks_per_beat, pr_res=32):
-        # piano roll to midi
-        onset_times = [ -1 for _ in range(88) ]
-        offset_times = [ -1 for _ in range(88) ]
+    # piano roll to midi
+    onset_times = [ -1 for _ in range(88) ]
+    offset_times = [ -1 for _ in range(88) ]
+    
+    notes = []
+    for t in range(piano_rolls.shape[0]):
+        for p in range(piano_rolls.shape[1]):
+            if piano_rolls[t, p] == 1:
+                if onset_times[p] == -1:
+                    onset_times[p] = t
+                elif offset_times[p] != -1:
+                    # seconds to ticks
+                    start = round(onset_times[p] * ticks_per_beat * 2 / pr_res)
+                    end = round((offset_times[p] + 1) * ticks_per_beat * 2 / pr_res) 
+                    
+                    notes.append(Note(
+                        pitch=p+21, 
+                        velocity=64,
+                        start=start,
+                        end=end
+                    ))
+                    onset_times[p] = t
+                    offset_times[p] = -1
+                    # print(f'pitch: {p+21}, start: {start}, end: {end}')
+            elif piano_rolls[t, p] == 2:
+                offset_times[p] = t
+            elif piano_rolls[t, p] == 0:
+                if onset_times[p] != -1 and offset_times[p] != -1:
+                    # seconds to ticks
+                    start = round(onset_times[p] * ticks_per_beat * 2 / pr_res)
+                    end = round((offset_times[p] + 1) * ticks_per_beat * 2 / pr_res)
+                    
+                    notes.append(Note(
+                        pitch=p+21, 
+                        velocity=64,
+                        start=start,
+                        end=end
+                    ))
+                    onset_times[p] = -1
+                    offset_times[p] = -1
+                    # print(f'pitch: {p+21}, start: {start}, end: {end}')
+                        
+        inst = Instrument()    
+        inst.notes = notes
         
-        notes = []
-        for t in range(piano_rolls.shape[0]):
-            for p in range(piano_rolls.shape[1]):
-                if piano_rolls[t, p] == 1:
-                    if onset_times[p] == -1:
-                        onset_times[p] = t
-                    elif offset_times[p] != -1:
-                        # seconds to ticks
-                        start = int(onset_times[p] * ticks_per_beat * 2 / pr_res)
-                        end = int(offset_times[p] * ticks_per_beat * 2 / pr_res)
-                        
-                        notes.append(Note(
-                            pitch=p+21, 
-                            velocity=64,
-                            start=start,
-                            end=end
-                        ))
-                        onset_times[p] = t
-                        offset_times[p] = -1
-                        # print(f'pitch: {p+21}, start: {start}, end: {end}')
-                elif piano_rolls[t, p] == 2:
-                    offset_times[p] = t
-                elif piano_rolls[t, p] == 0:
-                    if onset_times[p] != -1 and offset_times[p] != -1:
-                        # seconds to ticks
-                        start = int(onset_times[p] * ticks_per_beat * 2 / pr_res)
-                        end = int(offset_times[p] * ticks_per_beat * 2 / pr_res)
-                        
-                        notes.append(Note(
-                            pitch=p+21, 
-                            velocity=64,
-                            start=start,
-                            end=end
-                        ))
-                        onset_times[p] = -1
-                        offset_times[p] = -1
-                        # print(f'pitch: {p+21}, start: {start}, end: {end}')
-                            
-            inst = Instrument()    
-            inst.notes = notes
-            
-        return notes, inst
+    return notes, inst
     
 def pianoroll2midi(piano_rolls, leadsheet=None, arrangement=None, out_fp='output.mid', pr_res=32):
 

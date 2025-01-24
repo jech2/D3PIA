@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 
 from collections import defaultdict
 
-from transcription.dataset import MAESTRO_V3, Pop1k7
+from transcription.dataset import MAESTRO_V3, Pop1k7, POP909
 
 class PadCollate:
     def __init__(self, hop_size):
@@ -126,3 +126,25 @@ class Pop1k7_DataModule(pl.LightningDataModule):
                           pin_memory=False,
                         #   collate_fn=PadCollate(hop_size=self.hop_size)
                           )
+    
+class POP909_DataModule(Pop1k7_DataModule):
+    def __init__(self,
+                data_dir: str,
+                train_seq_len: int,
+                valid_seq_len: int,
+                batch_size: int,
+                hop_size: int,
+                num_workers: int,
+                pr_res: int, 
+                transpose: bool,
+                ):
+        super().__init__(data_dir, train_seq_len, valid_seq_len, batch_size, hop_size, num_workers, pr_res, transpose)
+    
+    def setup(self, stage=None):
+        self.train = POP909(path=self.data_dir, groups=['train'], sequence_length=self.train_seq_len,
+                                random_sample=True, transform=False, pr_res=self.pr_res, transpose=self.transpose)
+        self.val = POP909(path=self.data_dir, groups=['valid'], sequence_length=self.valid_seq_len,
+                                random_sample=False, transform=False, pr_res=self.pr_res, transpose=False)
+        self.test= POP909(path=self.data_dir, groups=['test'], sequence_length=None,
+                                random_sample=False, transform=False, pr_res=self.pr_res, transpose=False)
+    

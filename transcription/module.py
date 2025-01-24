@@ -84,7 +84,7 @@ class D3RM(DiscreteDiffusion):
         # Forward step (for loss calculation)    
         arrangement = arrangement.reshape(arrangement.shape[0], -1)
         disc_diffusion_loss = self(arrangement, leadsheet, return_loss=True)
-        frame_out, _ = self.sample_func(leadsheet) # frame out: B x T x 88 x C
+        frame_out, _ = self.sample_func(leadsheet, prev_piano=None) # frame out: B x T x 88 x C
         accuracy = (frame_out == arrangement).float()
         validation_metric = defaultdict(list)
         for n in range(leadsheet.shape[0]):
@@ -133,49 +133,65 @@ class D3RM(DiscreteDiffusion):
             leadsheet_pad = leadsheet[:, int(start):int(end)].to(self.device)
             # print(start, end, seg_len, seg, hop_size, leadsheet_pad.shape)
             # print(leadsheet_pad.shape)
-            if seg == 0:
+            if self.inpainting_ratio == 0:
                 frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None)
-                prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
             else:
-                frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, visualize_denoising=True)
-                # Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
-                # for idx in range(len(frame_out)):
-                #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
-                #     plt.figure(figsize=(8, 4))
-                #     plt.imshow(prev_piano[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
-                #     plt.title(f'Piano roll {idx}')
-                #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_prev_piano.png')
-                #     plt.close()
-                   
-                #     plt.figure(figsize=(8, 4))
-                #     plt.imshow(labels[idx].T, origin='lower', aspect='auto')
-                #     plt.title(f'Piano roll {idx}')
-                #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_labels.png')
-                #     plt.close() 
-                
-                prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
-                # save labels as visualized piano roll using matplotlib
-                # print(len(frame_out), frame_out.shape)
-                
-                # for idx in range(len(frame_out)):
-                #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
-                #     plt.figure(figsize=(8, 4))
-                #     plt.imshow(prev_piano[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
-                #     plt.title(f'Piano roll {idx}')
-                #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
-                #     plt.close()
+                if seg == 0:
+                    frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None)
+                    prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
+                else:   
+                    frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, visualize_denoising=True)
+                    # Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
+                    # for idx in range(len(frame_out)):
+                    #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
+                    #     plt.figure(figsize=(8, 4))
+                    #     plt.imshow(prev_piano[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
+                    #     plt.title(f'Piano roll {idx}')
+                    #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_prev_piano.png')
+                    #     plt.close()
                     
-                #     # leadsheet
-                #     plt.figure(figsize=(8,4))
-                #     plt.imshow(leadsheet_pad[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
-                #     plt.title(f'Piano roll {idx}')
-                #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_leadsheet.png')
-                #     plt.close()
-                
-            sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
-            frame_outs[:, int(start+seg_len*(1-self.inpainting_ratio)):end] = sample[:, int(seg_len*(1-self.inpainting_ratio)):seg_len]
+                    #     plt.figure(figsize=(8, 4))
+                    #     plt.imshow(labels[idx].T, origin='lower', aspect='auto')
+                    #     plt.title(f'Piano roll {idx}')
+                    #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_labels.png')
+                    #     plt.close() 
+                    
+                    prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
+                    # save labels as visualized piano roll using matplotlib
+                    # print(len(frame_out), frame_out.shape)
+                    
+                    # for idx in range(len(frame_out)):
+                    #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
+                    #     plt.figure(figsize=(8, 4))
+                    #     plt.imshow(prev_piano[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
+                    #     plt.title(f'Piano roll {idx}')
+                    #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
+                    #     plt.close()
 
-        
+                    sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
+                    frame_outs[:, int(start+seg_len*(1-self.inpainting_ratio)):end] = sample[:, int(seg_len*(1-self.inpainting_ratio)):seg_len]
+
+            
+            # for idx in range(len(frame_out)):
+            #     # leadsheet
+            #     plt.figure(figsize=(8,4))
+            #     plt.imshow(leadsheet_pad[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
+            #     plt.title(f'Piano roll {idx}')
+            #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_leadsheet.png')
+            #     plt.close()
+                    
+            sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
+            frame_outs[:, start:end] = sample[:, :seg_len]
+
+            # for idx in range(len(frame_out)):
+            #     # frame out
+            #     plt.figure(figsize=(8,4))
+            #     plt.imshow(sample[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
+            #     plt.title(f'Piano roll {idx}')
+            #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
+            #     plt.close()
+
+
         Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
         for idx in range(len(frame_outs)):
             
