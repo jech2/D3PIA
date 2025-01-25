@@ -821,19 +821,25 @@ class POP909(Pop1k7):
         piano_roll_fp = self.data_path[index].replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
         
         piano_rolls = np.load(piano_roll_fp)
-        
-        if self.sample_length is not None:
-            random_idx = np.random.randint(0, (piano_rolls.shape[1]-self.sample_length + 1) / self.pr_res)
-            
-            random_idx = random_idx * self.pr_res
-
-            cropped_piano_rolls = piano_rolls[:, random_idx:random_idx+self.sample_length]
-            
-            assert cropped_piano_rolls.shape[1] == self.sample_length
-            # assert (cropped_piano_rolls != 0).any()
-            
-        else:
+        if self.sample_length > piano_rolls.shape[1]:
+            padding = self.sample_length - piano_rolls.shape[1]
+            piano_rolls = np.pad(piano_rolls, ((0, 0), (0, padding), (0, 0)), mode='constant')
             cropped_piano_rolls = piano_rolls
+
+        else:
+
+            if self.sample_length is not None:
+                random_idx = np.random.randint(0, (piano_rolls.shape[1]-self.sample_length + 1) / self.pr_res)
+                
+                random_idx = random_idx * self.pr_res
+
+                cropped_piano_rolls = piano_rolls[:, random_idx:random_idx+self.sample_length]
+                
+                assert cropped_piano_rolls.shape[1] == self.sample_length
+                # assert (cropped_piano_rolls != 0).any()
+                
+            else:
+                cropped_piano_rolls = piano_rolls
 
         if self.groups == ['train'] and self.transpose and random.random() < 0.5:
             # considering piano roll pitch min max, reset the transpose value
