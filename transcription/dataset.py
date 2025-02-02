@@ -786,9 +786,7 @@ class POP909(Pop1k7):
     def __init__(self, path='data/POP909-Dataset', groups=None, sequence_length=313, seed=1, 
                  random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False, chord_style='pop909'):
         super().__init__(path, groups, sequence_length, seed, random_sample, transform, load_mode, pr_res, transpose, chord_style) 
-        print('sample length is ', self.sample_length)
-        print(len(self.data_path))
-        
+
     @classmethod
     def available_groups(cls):
         return ['train', 'valid', 'test']
@@ -895,4 +893,5 @@ class POP909(Pop1k7):
         return {
             'arrangement': cropped_piano_rolls[0],
             'leadsheet': cropped_piano_rolls[1],
+            'fname': self.data_path[index]
         }

@@ -110,7 +110,8 @@ class D3RM(DiscreteDiffusion):
         self.validation_step_outputs.clear()
     
     def test_step(self, batch, batch_idx):
-        out_fp = Path(self.test_save_path) / f'{batch_idx}.npz'
+        fname = Path(batch['fname'][0]).stem
+        out_fp = Path(self.test_save_path) / f'{batch_idx}_{fname}.npz'
         if out_fp.exists():
             print('already inference done, skip this index', {batch_idx})
             return
@@ -120,7 +121,7 @@ class D3RM(DiscreteDiffusion):
         test_metric = defaultdict(list)
 
         shape = leadsheet.shape
-        seg_len = 313
+        seg_len = 256
         hop_size = seg_len * (1-self.inpainting_ratio)
 
         n_seg = int((total_frame - seg_len) // hop_size + 1)
