@@ -786,7 +786,9 @@ class POP909(Pop1k7):
     def __init__(self, path='data/POP909-Dataset', groups=None, sequence_length=313, seed=1, 
                  random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False, chord_style='pop909'):
         super().__init__(path, groups, sequence_length, seed, random_sample, transform, load_mode, pr_res, transpose, chord_style) 
-
+        print('sample length is ', self.sample_length)
+        print(len(self.data_path))
+        
     @classmethod
     def available_groups(cls):
         return ['train', 'valid', 'test']
@@ -821,13 +823,12 @@ class POP909(Pop1k7):
         piano_roll_fp = self.data_path[index].replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
         
         piano_rolls = np.load(piano_roll_fp)
-        if self.sample_length > piano_rolls.shape[1]:
+
+        if self.sample_length is not None and self.sample_length > piano_rolls.shape[1]:
             padding = self.sample_length - piano_rolls.shape[1]
             piano_rolls = np.pad(piano_rolls, ((0, 0), (0, padding), (0, 0)), mode='constant')
             cropped_piano_rolls = piano_rolls
-
         else:
-
             if self.sample_length is not None:
                 random_idx = np.random.randint(0, (piano_rolls.shape[1]-self.sample_length + 1) / self.pr_res)
                 
