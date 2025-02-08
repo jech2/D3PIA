@@ -64,7 +64,7 @@ class TransModel(nn.Module):
             self.use_cfg = False
         
 
-    def forward(self, label, feature, t, cond_drop_prob=None):
+    def forward(self, label, feature, t, style_emb=None, cond_drop_prob=None):
         # feature (=cond_emb) : B x T*88 x H
         # label (=x_t) : B x T*88 x 1
         # feature are concatanated with label as input to model
@@ -81,9 +81,9 @@ class TransModel(nn.Module):
         label_emb = self.label_emb(label) # B x T*88 x label_embed_dim
         input_feature = th.cat((label_emb, feature), dim=-1) 
         if self.cross_condition == 'self':
-            x = self.trans_model(input_feature, None, t)
+            x = self.trans_model(input_feature, None, t, style_emb=style_emb)
         elif self.cross_condition == 'cross' or self.cross_condition == 'self_cross':
-            x = self.trans_model(input_feature, feature, t)
+            x = self.trans_model(input_feature, feature, t, style_emb=style_emb)
         out = self.output(x)
         return out.reshape(x.shape[0], x.shape[1]*x.shape[2], -1).permute(0, 2, 1) # B x 5 x T*88
 
@@ -132,19 +132,7 @@ class LSTM_NATTEN(nn.Module):
         self.dilation = dilation
         self.module_type = type
         
-        if self.natten_dir == '1d':
-            self.na_1t = nn.ModuleList([NeighborhoodAttention1D_diffusion(n_unit, 1, window[0],
-                                                                        spatial_size=self.spatial_size,
-                                                                        diffusion_step=self.diffusion_step,
-                                                                        timestep_type=self.timestep_type),
-                                    
-                                    ] * n_layers)
-            self.na_1f = nn.ModuleList([NeighborhoodAttention1D_diffusion(n_unit, 1, window[1],
-                                                                        spatial_size=self.spatial_size,
-                                                                        diffusion_step=self.diffusion_step,
-                                                                        timestep_type=self.timestep_type)
-                                    ] * n_layers)
-        elif self.natten_dir == '2d' and cross_condition == 'self':
+        if self.natten_dir == '2d' and cross_condition == 'self':
             self.na = []
             for i in range(n_layers):
                 self.na.append(NeighborhoodAttention2D_diffusion(n_unit, 4, window[i],
@@ -170,7 +158,7 @@ class LSTM_NATTEN(nn.Module):
                                      ] * (n_layers // 2))
 
 
-    def forward(self, x, cond=None, t=None, label_emb=None):
+    def forward(self, x, cond=None, t=None, style_emb=None, label_emb=None):
         """
         x shape : B x T*88 x n_unit
         cond shape : B x T*88 x feature_embed_dim(=128)
@@ -189,26 +177,11 @@ class LSTM_NATTEN(nn.Module):
             x = x.reshape(B, T, 88, H) # B x T x 88 x H
         x = x.permute(0, 2, 1, 3).reshape(B*88, T, H) # B*88 x T x H
         x, c = self.lstm(x)
-        # if use natten1d
-        if self.natten_dir == '1d':
-            for layer_1t, layer_1f in zip(self.na_1t, self.na_1f):
-                # x_res = x
-                x, t = layer_1t(x, t)
-                # x = x + x_res
-                x = x.reshape(B, 88, T, self.n_unit).permute(0,2,1,3).reshape(B*T, 88, self.n_unit)
-                # x_res = x
-                x, t = layer_1f(x, t)
-                x = x.reshape(B, T, 88, self.n_unit).permute(0,2,1,3).reshape(B*88, T, self.n_unit)
-                # x = x + x_res
-            x = x.reshape(B, 88, T, self.n_unit).permute(0,2,1,3) # B x T x 88 x H
-        
-        # if use natten2d 
-        # elif self.natten_dir == '2d' and self.cross_condition == 'cross':
-        elif self.natten_dir == '2d':
-            x = x.reshape(B, 88, T, -1).permute(0,2,1,3) # B x T x 88 x H
-            for layers in self.na:
-                x_res = x
-                x, _, t = layers(x, cond, t)
-                x = x + x_res
+
+        x = x.reshape(B, 88, T, -1).permute(0,2,1,3) # B x T x 88 x H
+        for layers in self.na:
+            x_res = x
+            x, _, t = layers(x, cond, t, style_emb)
+            x = x + x_res
 
         return x

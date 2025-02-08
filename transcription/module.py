@@ -35,6 +35,9 @@ class D3RM(DiscreteDiffusion):
     def __init__(self,
                 encoder: nn.Module,
                 decoder: nn.Module,
+                use_style_enc: bool,
+                style_enc_ckpt: str,
+                ref_arr_style_path: str,
                 encoder_parameters: str,
                 pretrained_encoder_path: str,
                 freeze_encoder: bool,
@@ -49,6 +52,7 @@ class D3RM(DiscreteDiffusion):
         self.scheduler = scheduler
         self.test_save_path = test_save_path
         self.inpainting_ratio = inpainting_ratio
+        self.ref_arr_style_path = ref_arr_style_path
         if encoder_parameters == "pretrained":
             ckpt = torch.load(pretrained_encoder_path)
             self.encoder.load_state_dict(ckpt['model_state_dict'], strict=False)
@@ -59,17 +63,58 @@ class D3RM(DiscreteDiffusion):
                 param.requires_grad = False
             print(colored('Freeze encoder', 'blue', attrs=['bold']))
         else: print(colored('Train encoder', 'blue', attrs=['bold']))
+
+        # freeze texture encoder
+        if use_style_enc:
+            from transcription.style_encoder import load_pretrained_style_enc
+            self.style_enc = load_pretrained_style_enc(
+                    style_enc_ckpt,
+                    256, # txt_emb_size
+                    1024, # txt_hidden_dim
+                    256, # txt_z_dim
+                    10, # txt_num_channel
+                )
+            
+            print(colored('Finished loading style_enc', 'blue', attrs=['bold']))
+        else:
+            self.style_enc = None
+            
+        if self.style_enc is not None:
+            for param in self.style_enc.parameters():
+                param.requires_grad = False
+                
+        # number of param
+        total_params = sum(p.numel() for p in self.style_enc.parameters())
+        print(total_params)
+
         self.step = 0
         self.validation_step_outputs = defaultdict(list)
+
+    def _encode_style(self, prmat):
+        z_list = []
+        if self.style_enc is not None:
+            for prmat_seg in prmat.split(32, 1):  # (#B, 32, 128) * 4
+                z_seg = self.style_enc(prmat_seg).mean
+                z_list.append(z_seg)
+            z = torch.cat(z_list, dim=-1)
+            z = z.unsqueeze(1)  # (#B, 1, 256*4)
+            return z
+        else:
+            # print(f"unencoded txt: {prmat.shape}")
+            return prmat
 
     def training_step(self, batch, batch_idx):
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
 
+        prmat = batch['prmat'].to(self.device).to(torch.float32)
+        
+        style_emb = self._encode_style(prmat).squeeze(1)
+
         # forward
         arrangement = arrangement.reshape(arrangement.shape[0], -1)
 
-        disc_diffusion_loss = self(arrangement, leadsheet, return_loss=True)
+        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, return_loss=True)
         self.log('train/diffusion_loss', disc_diffusion_loss['loss'].mean(), prog_bar=True, logger=True, on_step=True, on_epoch=False)
         self.log('lr', self.trainer.optimizers[0].param_groups[0]['lr'])
 
@@ -80,11 +125,15 @@ class D3RM(DiscreteDiffusion):
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
 
+
+        prmat = batch['prmat'].to(self.device).to(torch.float32)
+        style_emb = self._encode_style(prmat).squeeze(1)
+
         shape = arrangement.shape
         # Forward step (for loss calculation)    
         arrangement = arrangement.reshape(arrangement.shape[0], -1)
-        disc_diffusion_loss = self(arrangement, leadsheet, return_loss=True)
-        frame_out, _ = self.sample_func(leadsheet, prev_piano=None) # frame out: B x T x 88 x C
+        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, return_loss=True)
+        frame_out, _ = self.sample_func(leadsheet, prev_piano=None, style_emb=style_emb) # frame out: B x T x 88 x C
         accuracy = (frame_out == arrangement).float()
         validation_metric = defaultdict(list)
         for n in range(leadsheet.shape[0]):
@@ -111,17 +160,26 @@ class D3RM(DiscreteDiffusion):
     
     def test_step(self, batch, batch_idx):
         fname = Path(batch['fname'][0]).stem
-        out_fp = Path(self.test_save_path) / f'{batch_idx}_{fname}.npz'
+        # out_fp = Path(self.test_save_path) / f'{batch_idx}_{fname}.npz'
+        out_fp = Path(self.test_save_path) / f'{fname}.npz'
         if out_fp.exists():
             print('already inference done, skip this index', {batch_idx})
             return
                     
         leadsheet = batch['leadsheet'].to(self.device)   
+
+        if self.ref_arr_style_path != None:
+            print('using ref_arr_style_path', self.ref_arr_style_path)
+            prmat = get_prmat_from_midi(self.ref_arr_style_path)
+            prmat = torch.tensor(prmat).to(self.device).to(torch.float32)
+        else:
+            prmat = batch['prmat'].to(self.device).to(torch.float32)
+
         B, total_frame, _ = leadsheet.shape
         test_metric = defaultdict(list)
 
         shape = leadsheet.shape
-        seg_len = 256
+        seg_len = 128
         hop_size = seg_len * (1-self.inpainting_ratio)
 
         n_seg = int((total_frame - seg_len) // hop_size + 1)
@@ -132,16 +190,23 @@ class D3RM(DiscreteDiffusion):
             start = int(seg * hop_size)
             end = start + seg_len
             leadsheet_pad = leadsheet[:, int(start):int(end)].to(self.device)
+            if self.ref_arr_style_path != None:
+                prmat_pad = prmat[:seg_len].unsqueeze(dim=0).to(self.device)
+            else:
+                prmat_pad = prmat[:, int(start):int(end)].to(self.device)
+
+            style_emb = self._encode_style(prmat_pad).squeeze(1)
+
             # print(start, end, seg_len, seg, hop_size, leadsheet_pad.shape)
             # print(leadsheet_pad.shape)
             if self.inpainting_ratio == 0:
-                frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None)
+                frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb)
             else:
                 if seg == 0:
-                    frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None)
+                    frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb)
                     prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
                 else:   
-                    frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, visualize_denoising=True)
+                    frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, style_emb=style_emb, visualize_denoising=True)
                     # Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
                     # for idx in range(len(frame_out)):
                     #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
@@ -206,14 +271,14 @@ class D3RM(DiscreteDiffusion):
             }
             np.savez(out_fp, **output)
             
-    def sample_func(self, leadsheet, prev_piano, visualize_denoising=False):
+    def sample_func(self, leadsheet, prev_piano, style_emb=None, visualize_denoising=False):
         tic = time.time()
         if self.inpainting_ratio == 0 or prev_piano is None:
-            samples, labels = self.sample(leadsheet, 
+            samples, labels = self.sample(leadsheet, style_emb,
                                         visualize_denoising=visualize_denoising)
         else:
             with torch.no_grad():
-                samples, labels = self.sample_inpainting(leadsheet, prev_piano, 
+                samples, labels = self.sample_inpainting(leadsheet, style_emb, prev_piano, 
                                             inpainting_ratio=self.inpainting_ratio,
                                             visualize_denoising=visualize_denoising,
                                             shape=leadsheet.shape)
@@ -231,7 +296,7 @@ class D3RM(DiscreteDiffusion):
                     "frequency": 1,
                     }}
         
-    def predict_start(self, log_x_t, cond_audio, t, sampling=False):
+    def predict_start(self, log_x_t, cond_audio, style_emb, t, sampling=False):
         # p(x0|xt)
         x_t = log_onehot_to_index(log_x_t)
         
@@ -241,18 +306,18 @@ class D3RM(DiscreteDiffusion):
             else:
                 feature = self.encoder(cond_audio)
                 
-            out = self.decoder(x_t, feature, t)
+            out = self.decoder(x_t, feature, t, style_emb)
         if sampling==True:
             if t[0].item() == self.num_timesteps-1:
                 if isinstance(self.encoder, LSTM_NATTEN):
                     feature = self.encoder(cond_audio, label_emb=self.decoder.label_emb)
                 else:
                     feature = self.encoder(cond_audio)
-                out = self.decoder(x_t, feature, t)
+                out = self.decoder(x_t, feature, t, style_emb)
                 self.saved_encoder_features = feature
             else:
                 assert self.saved_encoder_features is not None
-                out = self.decoder(x_t, self.saved_encoder_features, t)
+                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb)
             # if t[0].item() == 0: self.saved_encoder_features = None
 
         assert out.size(0) == x_t.size(0)
@@ -266,3 +331,19 @@ class D3RM(DiscreteDiffusion):
         log_pred = torch.clamp(log_pred, -70, 0)
 
         return log_pred
+
+
+def get_prmat_from_midi(path):
+    from midisym.parser.midi import MidiParser
+    from midisym.converter.matrix import make_grid_quantized_notes, make_grid_quantized_note_prmat
+
+    midi_parser = MidiParser(path, use_symusic=True)
+    sym_obj = midi_parser.sym_music_container
+    # piano_rolls, piano_roll_xs, note_infos = get_absolute_time_mat(sym_obj, pr_res=self.pr_res, chord_style=self.chord_style)
+
+    sym_obj, grid = make_grid_quantized_notes(
+        sym_obj=sym_obj,
+        sym_data_type="analyzed performance MIDI -- grid from ticks",
+    )
+    prmat = make_grid_quantized_note_prmat(sym_obj, grid, value='duration', do_slicing=False)
+    return prmat

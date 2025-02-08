@@ -49,22 +49,34 @@ class SinusoidalPosEmb(nn.Module):
         return emb
 
 class AdaLayerNorm(nn.Module):
-    def __init__(self, dim, diffusion_step, emb_type="adalayernorm_abs"):
+    def __init__(self, i_dim, diffusion_step, o_dim=None, emb_type="adalayernorm_abs"):
         super().__init__()
-        if "abs" in emb_type:
-            self.emb = SinusoidalPosEmb(diffusion_step, dim)
+        self.emb_type = emb_type
+        if emb_type == 'style':
+            self.emb = None
+            self.layernorm = nn.LayerNorm(o_dim // 2, elementwise_affine=False)
         else:
-            self.emb = nn.Embedding(diffusion_step, dim)
-        self.silu = nn.SiLU()
-        self.linear = nn.Linear(dim, dim*2)
-        self.layernorm = nn.LayerNorm(dim, elementwise_affine=False)
+            if "abs" in emb_type:
+                self.emb = SinusoidalPosEmb(diffusion_step, i_dim)
+            else:
+                self.emb = nn.Embedding(diffusion_step, i_dim)
+            assert o_dim == None
+            o_dim = 2*i_dim
+            self.layernorm = nn.LayerNorm(i_dim, elementwise_affine=False)
 
-    def forward(self, x, timestep): # TODO : check if valid
-        emb = self.linear(self.silu(self.emb(timestep))).unsqueeze(1)
+        self.silu = nn.SiLU()
+        self.linear = nn.Linear(i_dim, o_dim)
+
+    def forward(self, x, timestep=None, style_emb=None): # TODO : check if valid
+        if self.emb_type == 'style':
+            assert style_emb != None and timestep == None
+            emb = self.linear(self.silu(style_emb)).unsqueeze(1)
+        else:
+            assert timestep != None and style_emb == None
+            emb = self.linear(self.silu(self.emb(timestep))).unsqueeze(1)
         scale, shift = torch.chunk(emb, 2, dim=2)
         x = self.layernorm(x) * (1 + scale) + shift
         return x
-
 
 class NeighborhoodAttention2D_diffusion(nn.Module):
     """
@@ -99,7 +111,9 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         self.dilation = dilation or 1
         self.window_size = self.kernel_size * self.dilation
         if timestep_type != None:
-            self.ln = AdaLayerNorm(dim=dim, diffusion_step=diffusion_step, emb_type=timestep_type)
+            self.ln = AdaLayerNorm(i_dim=dim, diffusion_step=diffusion_step, o_dim=None, emb_type=timestep_type)
+            self.ln_style = AdaLayerNorm(i_dim=1024, diffusion_step=None, o_dim=2*dim, emb_type='style')
+
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         if bias:
@@ -113,7 +127,7 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x: Tensor, cond:Tensor, t:Tensor) -> Tensor:
+    def forward(self, x: Tensor, cond:Tensor, t:Tensor, style_emb:Tensor = None) -> Tensor:
         if x.dim() != 4:
             raise ValueError(
                 f"NeighborhoodAttention2D expected a rank-4 input tensor; got {x.dim()=}."
@@ -130,10 +144,10 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
             _, H_padded, W_padded, _ = x.shape
         
         # conditioning t
-        x = x.reshape(B, H*W, C)
         if self.timestep_type != None:
+            x = x.reshape(B, H*W, C)
             x = self.ln(x, t)
-        x = x.reshape(B, H, W, C)
+            x = x.reshape(B, H, W, C)
 
         qkv = (
             self.qkv(x)
@@ -151,6 +165,12 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         # Remove padding, if added any
         if padding_h or padding_w:
             x = x[:, :H, :W, :]
+        
+        # layernorm
+        if self.timestep_type != None:
+            x = x.reshape(B, H*W, C)
+            x = self.ln_style(x, style_emb=style_emb) 
+            x = x.reshape(B, H, W, C)
 
         return self.proj_drop(self.proj(x)), None, t
 

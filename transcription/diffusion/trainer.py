@@ -274,19 +274,19 @@ class DiscreteDiffusion(pl.LightningModule):
 
         return log_probs
 
-    def predict_start(self, log_x_t, cond_audio, t, sampling=False):          # p(x0|xt)
+    def predict_start(self, log_x_t, cond_audio, style_emb, t, sampling=False):          # p(x0|xt)
         x_t = log_onehot_to_index(log_x_t)
         if sampling==False:
             feature = self.encoder(cond_audio)
-            out = self.decoder(x_t, feature, t)
+            out = self.decoder(x_t, feature, t, style_emb)
         if sampling==True:
             if t[0].item() == self.num_timesteps-1:
                 feature = self.encoder(cond_audio)
-                out = self.decoder(x_t, feature, t)
+                out = self.decoder(x_t, feature, t, style_emb)
                 self.saved_encoder_features = feature
             else:
                 assert self.saved_encoder_features is not None
-                out = self.decoder(x_t, self.saved_encoder_features, t)
+                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb=None)
             if t[0].item() == 0: self.saved_encoder_features = None
 
         assert out.size(0) == x_t.size(0)
@@ -370,34 +370,30 @@ class DiscreteDiffusion(pl.LightningModule):
         return torch.clamp(log_EV_xtmin_given_xt_given_xstart, -70, 0)
 
 
-    def p_pred(self, log_x, cond_audio, t, target=None, mask=None, repaint=1):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
+    def p_pred(self, log_x, cond_audio, t, style_emb=None, target=None, mask=None, repaint=1):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
         # p_pred for sampling
         if self.parametrization == 'x0':
-            log_x_recon = self.predict_start(log_x, cond_audio, t, sampling=True)
+            log_x_recon = self.predict_start(log_x, cond_audio, style_emb, t, sampling=True)
             if target is not None and mask is not None:
                 log_x_recon = log_x_recon * (1 - mask) + target * mask
             if self.reverse_sampling:
                 log_model_pred = self.q_posterior_reverse(log_x_start=log_x_recon, log_x_t=log_x, t=t)
             elif not self.reverse_sampling:
                 log_model_pred = self.q_posterior(log_x_start=log_x_recon, log_x_t=log_x, t=t)
-        elif self.parametrization == 'direct':
-            log_model_pred = self.predict_start(log_x, cond_audio, t, sampling=True)
         else:
             raise ValueError
         return log_model_pred
     
-    def p_pred_inpainting(self, log_x, cond_audio, t, prev_log_x, mask, repaint:int = 10):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
+    def p_pred_inpainting(self, log_x, cond_audio, t, style_emb=None, prev_log_x=None, mask=None, repaint:int = 10):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
         # p_pred for sampling
         for r in range(repaint):
             if self.parametrization == 'x0':
-                log_x_recon = self.predict_start(log_x, cond_audio, t, sampling=True)
+                log_x_recon = self.predict_start(log_x, cond_audio, t, style_emb, sampling=True)
                 log_x_recon = log_x_recon * (1 - mask) + prev_log_x * mask
                 if self.reverse_sampling:
                     log_model_pred = self.q_posterior_reverse(log_x_start=log_x_recon, log_x_t=log_x, t=t)
                 elif not self.reverse_sampling:
                     log_model_pred = self.q_posterior(log_x_start=log_x_recon, log_x_t=log_x, t=t)
-            elif self.parametrization == 'direct':
-                log_model_pred = self.predict_start(log_x, cond_audio, t, sampling=True)
             else:
                 raise ValueError
             if r < repaint - 1:
@@ -406,8 +402,8 @@ class DiscreteDiffusion(pl.LightningModule):
     
 
     @torch.no_grad()
-    def p_sample(self, log_x, cond_audio, t, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
-        model_log_prob = self.p_pred(log_x, cond_audio, t) # onset, reonset -> 2, 4 (0~4)
+    def p_sample(self, log_x, cond_audio, t, style_emb=None, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
+        model_log_prob = self.p_pred(log_x, cond_audio, t, style_emb) # onset, reonset -> 2, 4 (0~4)
         if self.onset_suppress: # suppress onset, offsets when sampling
             model_log_prob[:, 0, :] = model_log_prob[:, 0, :] * (1 + self.onset_suppress)
             # model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
@@ -415,7 +411,7 @@ class DiscreteDiffusion(pl.LightningModule):
         return out
 
     @torch.no_grad()
-    def p_sample_inpainting(self, log_x, cond_audio, t, prev_log_x, inpainting_ratio, shape, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
+    def p_sample_inpainting(self, log_x, cond_audio, t, prev_log_x, inpainting_ratio, shape, style_emb=None, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
         prev_log_x_reshape = prev_log_x.reshape((shape[0], -1, shape[1], shape[2])) # B x class x T x 88
         source = prev_log_x_reshape[:, :, int(shape[1]*inpainting_ratio):, :] 
         empty = torch.zeros(prev_log_x_reshape.shape, dtype=prev_log_x_reshape.dtype, device=prev_log_x_reshape.device)[:, :, :int(shape[1]*(1-inpainting_ratio)), :]
@@ -423,7 +419,7 @@ class DiscreteDiffusion(pl.LightningModule):
         prev_log_x = torch.cat([source, empty], dim=-2)
         mask = mask.reshape((mask.shape[0], mask.shape[1], -1)) # B x class x T*88
         prev_log_x = prev_log_x.reshape((mask.shape[0], mask.shape[1], -1)) # B x class x T*88
-        model_log_prob = self.p_pred_inpainting(log_x, cond_audio, t, prev_log_x, mask, self.repaint) # onset, reonset -> 2, 4 (0~4)
+        model_log_prob = self.p_pred_inpainting(log_x, cond_audio, t, style_emb, prev_log_x, mask, self.repaint) # onset, reonset -> 2, 4 (0~4)
         if self.onset_suppress: # suppress onset, offsets when sampling
             model_log_prob[:, 0, :] = model_log_prob[:, 0, :] * (1 + self.onset_suppress)
             # model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
@@ -465,7 +461,7 @@ class DiscreteDiffusion(pl.LightningModule):
         else:
             raise ValueError
 
-    def _train_loss(self, x, cond_audio, is_train=True):                       # get the KL loss
+    def _train_loss(self, x, cond_audio, style_emb=None, is_train=True):                       # get the KL loss
         b, device = x.size(0), x.device
 
         assert self.loss_type == 'vb_stochastic'
@@ -479,7 +475,7 @@ class DiscreteDiffusion(pl.LightningModule):
         xt = log_onehot_to_index(log_xt)
 
         ############### go to p_theta function ###############
-        log_x0_recon = self.predict_start(log_xt, cond_audio, t=t)            # P_theta(x0|xt)
+        log_x0_recon = self.predict_start(log_xt, cond_audio, style_emb=style_emb, t=t)            # P_theta(x0|xt)
         log_model_prob = self.q_posterior(log_x_start=log_x0_recon, log_x_t=log_xt, t=t)      # go through q(xt_1|xt,x0)
 
         ################## compute acc list ################
@@ -539,6 +535,7 @@ class DiscreteDiffusion(pl.LightningModule):
             self, 
             label,
             features, 
+            style_emb=None,
             return_loss=False, 
             return_logits=True, 
             return_att_weight=False,
@@ -550,7 +547,7 @@ class DiscreteDiffusion(pl.LightningModule):
         # now we get cond_emb and sample_image
         ######## Diffusion Training ########
         if is_train == True:
-            log_model_prob, loss = self._train_loss(label, features)
+            log_model_prob, loss = self._train_loss(label, features, style_emb)
             loss = loss.sum()/(label.size()[0] * label.size()[1]) # TODO: check if input.size()[0] and [1] is right
 
         # 4) get output, especially loss
@@ -566,6 +563,7 @@ class DiscreteDiffusion(pl.LightningModule):
     def sample(
             self,
             audio,
+            style_emb=None,
             return_logits = False,
             visualize_denoising = False):
 
@@ -594,7 +592,7 @@ class DiscreteDiffusion(pl.LightningModule):
             with torch.no_grad():
                 for diffusion_index in range(start_step-1, -1, -1):
                     t = torch.full((batch_size,), diffusion_index, device=device, dtype=torch.long) # make batch tensor filled with value 't'
-                    log_z = self.p_sample(log_z, cond_audio, t)     # log_z is log_onehot
+                    log_z = self.p_sample(log_z, cond_audio, t, style_emb)     # log_z is log_onehot
                     if visualize_denoising:
                         labels.append(log_z.argmax(1).cpu().numpy())
 
@@ -612,6 +610,7 @@ class DiscreteDiffusion(pl.LightningModule):
     def sample_inpainting(
             self,
             leadsheet: Tensor, # leadsheet
+            style_emb: Tensor,
             prev_piano,
             inpainting_ratio: float,
             shape,
@@ -635,7 +634,7 @@ class DiscreteDiffusion(pl.LightningModule):
             with torch.no_grad():
                 for diffusion_index in range(start_step-1, -1, -1):
                     t = torch.full((batch_size,), diffusion_index, device=device, dtype=torch.long) # make batch tensor filled with value 't'
-                    log_z = self.p_sample_inpainting(log_z, cond_leadsheet, t, prev_log_z, inpainting_ratio, shape)     # log_z is log_onehot
+                    log_z = self.p_sample_inpainting(log_z, cond_leadsheet, t, prev_log_z, inpainting_ratio, shape, style_emb)     # log_z is log_onehot
                     if visualize_denoising:
                         labels.append(log_z.argmax(1).cpu().numpy())
         else: 

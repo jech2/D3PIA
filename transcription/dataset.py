@@ -27,6 +27,8 @@ from midisym.converter.matrix import get_absolute_time_mat, get_grid_quantized_t
 
 from midisym.converter.constants import N_PITCH, PITCH_OFFSET, PR_RES, ONSET, SUSTAIN, CHORD_OFFSET, POP1k7_MELODY, POP1k7_ARRANGEMENT
 from midisym.parser.midi import MidiParser
+from midisym.converter.matrix import make_grid_quantized_note_prmat
+
 import random
 
 def uniform_augmentation(arr, width, prob):
@@ -805,7 +807,7 @@ class POP909(Pop1k7):
         npy_path = input_path.replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
         # # remove prev npy file
         # if os.path.exists(npy_path):
-        #     os.remove(npy_path)
+            # os.remove(npy_path)
             
         if not os.path.exists(npy_path):
             print('converting midi to piano roll npy')
@@ -813,18 +815,31 @@ class POP909(Pop1k7):
             sym_obj = midi_parser.sym_music_container
             # piano_rolls, piano_roll_xs, note_infos = get_absolute_time_mat(sym_obj, pr_res=self.pr_res, chord_style=self.chord_style)
  
-            piano_rolls, _ = get_grid_quantized_time_mat(sym_obj, chord_style='pop909', add_chord_labels_to_pr=True)
+            piano_rolls, grid = get_grid_quantized_time_mat(sym_obj, chord_style='pop909', add_chord_labels_to_pr=True)
+            prmat = make_grid_quantized_note_prmat(sym_obj, grid, value='duration', do_slicing=False)
 
-            np.save(npy_path, piano_rolls)
+            print(piano_rolls[0].shape, prmat.shape)
+            assert piano_rolls[0].shape[0] == prmat.shape[0]
+
+            ret = {
+                'piano_rolls': piano_rolls,
+                'prmat': prmat, # for style conditioning. time x pitch , value is quantized duration index(16th note unit) prmat[o, p] = d
+            }
+
+            np.save(npy_path, ret)
 
     def __getitem__(self, index):
         piano_roll_fp = self.data_path[index].replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
         
-        piano_rolls = np.load(piano_roll_fp)
+        data = np.load(piano_roll_fp, allow_pickle=True).item()
+
+        piano_rolls = np.array(data['piano_rolls'])
+        prmat = data['prmat']
 
         if self.sample_length is not None and self.sample_length > piano_rolls.shape[1]:
             padding = self.sample_length - piano_rolls.shape[1]
             piano_rolls = np.pad(piano_rolls, ((0, 0), (0, padding), (0, 0)), mode='constant')
+            prmat = np.pad(prmat, ((0, padding), (0, 0)), mode='constant')
             cropped_piano_rolls = piano_rolls
         else:
             if self.sample_length is not None:
@@ -833,8 +848,10 @@ class POP909(Pop1k7):
                 random_idx = random_idx * self.pr_res
 
                 cropped_piano_rolls = piano_rolls[:, random_idx:random_idx+self.sample_length]
-                
+                prmat = prmat[random_idx:random_idx+self.sample_length]
+
                 assert cropped_piano_rolls.shape[1] == self.sample_length
+                assert cropped_piano_rolls.shape[1] == prmat.shape[0]
                 # assert (cropped_piano_rolls != 0).any()
                 
             else:
@@ -888,10 +905,14 @@ class POP909(Pop1k7):
             #     plt.close()
 
         cropped_piano_rolls = th.tensor(cropped_piano_rolls).long()
+        prmat = th.tensor(prmat).float() # to float32
 
+        # shape check
+        assert cropped_piano_rolls.shape[1] == prmat.shape[0]
 
         return {
             'arrangement': cropped_piano_rolls[0],
             'leadsheet': cropped_piano_rolls[1],
+            'prmat': prmat,
             'fname': self.data_path[index]
         }
