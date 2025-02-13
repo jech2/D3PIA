@@ -74,6 +74,7 @@ class AdaLayerNorm(nn.Module):
         else:
             assert timestep != None and style_emb == None
             emb = self.linear(self.silu(self.emb(timestep))).unsqueeze(1)
+            
         scale, shift = torch.chunk(emb, 2, dim=2)
         x = self.layernorm(x) * (1 + scale) + shift
         return x

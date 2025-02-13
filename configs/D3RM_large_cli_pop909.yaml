@@ -56,7 +56,7 @@ model:
   reverse_sampling: True
   inpainting_ratio: 0 # how much to inpaint
   repaint: 5
-  use_style_enc: False # check the encoder and decoder parameter use_style_enc is same as this
+  use_style_enc: True # check the decoder parameter use_style_enc is same as this
   style_enc_ckpt: pretrained/polydis/model_master_final.pt
   ref_arr_style_path: null
 
@@ -74,7 +74,7 @@ model:
       n_layers: 10
       cross_condition: self
       type: encoder
-      use_style_enc: False
+      use_style_enc: False # we only use style encoder in decoder
 
   decoder:  
     class_path: transcription.decoder.TransModel
@@ -93,7 +93,7 @@ model:
       num_class: 3
       classifier_free_guidance: False
       features_embed_dim: 96
-      use_style_enc: False
+      use_style_enc: True
 
   optimizer:
     class_path: torch.optim.AdamW

@@ -67,7 +67,7 @@ class D3RM(DiscreteDiffusion):
         # freeze texture encoder
         if use_style_enc:
             assert style_enc_ckpt is not None and Path(style_enc_ckpt).exists()
-            assert self.encoder.use_style_enc == True and self.decoder.use_style_enc == True
+            assert self.encoder.use_style_enc == False and self.decoder.use_style_enc == True
             
             from transcription.style_encoder import load_pretrained_style_enc
             self.style_enc = load_pretrained_style_enc(
@@ -102,7 +102,6 @@ class D3RM(DiscreteDiffusion):
                 z_seg = self.style_enc(prmat_seg).mean
                 z_list.append(z_seg)
             z = torch.cat(z_list, dim=-1)
-            z = z.unsqueeze(1)  # (#B, 1, 256*4)
             return z
         else:
             # print(f"unencoded txt: {prmat.shape}")
