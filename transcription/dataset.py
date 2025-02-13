@@ -804,7 +804,9 @@ class POP909(Pop1k7):
     def load(self, input_path):
         if isinstance(input_path, Path):
             input_path = str(input_path)
-        npy_path = input_path.replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
+        # npy_path = input_path.replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
+        npy_path = input_path.replace('.mid', f'_piano_rolls_{self.pr_res}_with_style_input_arr.npy')
+
         # # remove prev npy file
         # if os.path.exists(npy_path):
             # os.remove(npy_path)
@@ -816,7 +818,7 @@ class POP909(Pop1k7):
             # piano_rolls, piano_roll_xs, note_infos = get_absolute_time_mat(sym_obj, pr_res=self.pr_res, chord_style=self.chord_style)
  
             piano_rolls, grid = get_grid_quantized_time_mat(sym_obj, chord_style='pop909', add_chord_labels_to_pr=True)
-            prmat = make_grid_quantized_note_prmat(sym_obj, grid, value='duration', do_slicing=False)
+            prmat = make_grid_quantized_note_prmat(sym_obj, grid, value='duration', do_slicing=False, inst_ids=[2]) # added input inst ids as arr only
 
             print(piano_rolls[0].shape, prmat.shape)
             assert piano_rolls[0].shape[0] == prmat.shape[0]
@@ -829,7 +831,8 @@ class POP909(Pop1k7):
             np.save(npy_path, ret)
 
     def __getitem__(self, index):
-        piano_roll_fp = self.data_path[index].replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
+        # piano_roll_fp = self.data_path[index].replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
+        piano_roll_fp = self.data_path[index].replace('.mid', f'_piano_rolls_{self.pr_res}_with_style_input_arr.npy')
         
         data = np.load(piano_roll_fp, allow_pickle=True).item()
 

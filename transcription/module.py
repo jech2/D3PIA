@@ -37,7 +37,7 @@ class D3RM(DiscreteDiffusion):
                 decoder: nn.Module,
                 use_style_enc: bool,
                 style_enc_ckpt: str,
-                ref_arr_style_path: str,
+                ref_arr_style_path: str | None,
                 encoder_parameters: str,
                 pretrained_encoder_path: str,
                 freeze_encoder: bool,

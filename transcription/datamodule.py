@@ -145,6 +145,6 @@ class POP909_DataModule(Pop1k7_DataModule):
                                 random_sample=True, transform=False, pr_res=self.pr_res, transpose=self.transpose)
         self.val = POP909(path=self.data_dir, groups=['valid'], sequence_length=self.valid_seq_len,
                                 random_sample=False, transform=False, pr_res=self.pr_res, transpose=False)
-        self.test= POP909(path=self.data_dir, groups=['test'], sequence_length=None,
+        self.test= POP909(path=self.data_dir, groups=['valid'], sequence_length=None,
                                 random_sample=False, transform=False, pr_res=self.pr_res, transpose=False)
     
