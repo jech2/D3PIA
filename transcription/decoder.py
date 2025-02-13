@@ -17,6 +17,7 @@ class TransModel(nn.Module):
                 timestep_type: str,
                 natten_direction: str,
                 spatial_size: List[int],
+                use_style_enc: bool,
                 num_state: int = 5,
                 classifier_free_guidance: bool = False,
                 features_embed_dim: int = 128,
@@ -38,6 +39,7 @@ class TransModel(nn.Module):
         self.num_state = num_state
         self.classifier_free_guidance = classifier_free_guidance
         self.num_class = num_class
+        self.use_style_enc = use_style_enc
 
         # self.trans_model = NATTEN(config.hidden_per_pitch)
         self.trans_model = LSTM_NATTEN((label_embed_dim+features_embed_dim), 
@@ -50,6 +52,7 @@ class TransModel(nn.Module):
                                         n_unit=self.n_unit,
                                         n_layers=self.n_layers,
                                         cross_condition=self.cross_condition,
+                                        use_style_enc=self.use_style_enc,
                                         )
         self.output = nn.Linear(self.n_unit, self.num_class) 
         self.label_emb = nn.Embedding(num_state + 1, # +1 is for mask
@@ -112,12 +115,13 @@ class LSTM_NATTEN(nn.Module):
                  natten_direction,
                  spatial_size,
                  dilation: List[int],
+                 use_style_enc: bool,
                  window=25,
                  n_unit=24,
                  n_head=4,
                  n_layers=2,
                  cross_condition=False,
-                 type='decoder',
+                 type='decoder'
         ):
         super().__init__()
         self.n_head = n_head
@@ -131,6 +135,7 @@ class LSTM_NATTEN(nn.Module):
         self.cross_condition = cross_condition
         self.dilation = dilation
         self.module_type = type
+        self.use_style_enc = use_style_enc
         
         if self.natten_dir == '2d' and cross_condition == 'self':
             self.na = []
@@ -138,24 +143,11 @@ class LSTM_NATTEN(nn.Module):
                 self.na.append(NeighborhoodAttention2D_diffusion(n_unit, 4, window[i],
                                                                     diffusion_step=self.diffusion_step,
                                                                     dilation=self.dilation[i],
-                                                                    timestep_type=self.timestep_type))
+                                                                    timestep_type=self.timestep_type, 
+                                                                    use_style_enc=self.use_style_enc))
             self.na = nn.ModuleList(self.na)
-        elif self.natten_dir == '2d' and cross_condition == 'cross':
-            self.na = []
-            for i in range(n_layers):
-                self.na.append(NeighborhoodCrossAttention2D_diffusion(n_unit, 4, window[i],
-                                                                    diffusion_step=self.diffusion_step,
-                                                                    dilation=self.dilation[i],
-                                                                    timestep_type=self.timestep_type))
-            self.na = nn.ModuleList(self.na)
-        elif self.natten_dir == '2d' and cross_condition == 'self_cross':
-            self.na = nn.ModuleList([NeighborhoodAttention2D_diffusion(n_unit, 4, window,
-                                                                        diffusion_step=self.diffusion_step,
-                                                                        timestep_type=self.timestep_type),
-                                    NeighborhoodCrossAttention2D_diffusion(n_unit, 4, window,
-                                                                        diffusion_step=self.diffusion_step,
-                                                                        timestep_type=self.timestep_type),
-                                     ] * (n_layers // 2))
+        else:
+            raise NotImplementedError(f"natten_dir: {self.natten_dir}, cross_condition: {self.cross_condition}")
 
 
     def forward(self, x, cond=None, t=None, style_emb=None, label_emb=None):

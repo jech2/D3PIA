@@ -94,13 +94,15 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         attn_drop: float = 0.0,
         proj_drop: float = 0.0,
         diffusion_step: int = 100,
-        timestep_type: str = "adalayernorm_abs"
+        timestep_type: str = "adalayernorm_abs",
+        use_style_enc: bool = False,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = dim // self.num_heads
         self.scale = qk_scale or self.head_dim**-0.5
         self.timestep_type = timestep_type
+        self.use_style_enc = use_style_enc
         assert (
             kernel_size > 1 and kernel_size % 2 == 1
         ), f"Kernel size must be an odd number greater than 1, got {kernel_size}."
@@ -112,7 +114,8 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         self.window_size = self.kernel_size * self.dilation
         if timestep_type != None:
             self.ln = AdaLayerNorm(i_dim=dim, diffusion_step=diffusion_step, o_dim=None, emb_type=timestep_type)
-            self.ln_style = AdaLayerNorm(i_dim=1024, diffusion_step=None, o_dim=2*dim, emb_type='style')
+            if self.use_style_enc:
+                self.ln_style = AdaLayerNorm(i_dim=1024, diffusion_step=None, o_dim=2*dim, emb_type='style')
 
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
@@ -169,7 +172,8 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         # layernorm
         if self.timestep_type != None:
             x = x.reshape(B, H*W, C)
-            x = self.ln_style(x, style_emb=style_emb) 
+            if style_emb != None and self.use_style_enc:
+                x = self.ln_style(x, style_emb=style_emb)
             x = x.reshape(B, H, W, C)
 
         return self.proj_drop(self.proj(x)), None, t

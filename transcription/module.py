@@ -66,6 +66,9 @@ class D3RM(DiscreteDiffusion):
 
         # freeze texture encoder
         if use_style_enc:
+            assert style_enc_ckpt is not None and Path(style_enc_ckpt).exists()
+            assert self.encoder.use_style_enc == True and self.decoder.use_style_enc == True
+            
             from transcription.style_encoder import load_pretrained_style_enc
             self.style_enc = load_pretrained_style_enc(
                     style_enc_ckpt,
@@ -77,15 +80,17 @@ class D3RM(DiscreteDiffusion):
             
             print(colored('Finished loading style_enc', 'blue', attrs=['bold']))
         else:
+            assert self.encoder.use_style_enc == False and self.decoder.use_style_enc == False
             self.style_enc = None
+            print(colored('No style encoder', 'blue', attrs=['bold']))
             
         if self.style_enc is not None:
             for param in self.style_enc.parameters():
                 param.requires_grad = False
                 
-        # number of param
-        total_params = sum(p.numel() for p in self.style_enc.parameters())
-        print(total_params)
+            # number of param
+            total_params = sum(p.numel() for p in self.style_enc.parameters())
+            print(total_params)
 
         self.step = 0
         self.validation_step_outputs = defaultdict(list)
@@ -101,7 +106,7 @@ class D3RM(DiscreteDiffusion):
             return z
         else:
             # print(f"unencoded txt: {prmat.shape}")
-            return prmat
+            return None
 
     def training_step(self, batch, batch_idx):
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
@@ -109,7 +114,7 @@ class D3RM(DiscreteDiffusion):
 
         prmat = batch['prmat'].to(self.device).to(torch.float32)
         
-        style_emb = self._encode_style(prmat).squeeze(1)
+        style_emb = self._encode_style(prmat)
 
         # forward
         arrangement = arrangement.reshape(arrangement.shape[0], -1)
@@ -127,7 +132,7 @@ class D3RM(DiscreteDiffusion):
 
 
         prmat = batch['prmat'].to(self.device).to(torch.float32)
-        style_emb = self._encode_style(prmat).squeeze(1)
+        style_emb = self._encode_style(prmat)
 
         shape = arrangement.shape
         # Forward step (for loss calculation)    
