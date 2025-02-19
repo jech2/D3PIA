@@ -186,20 +186,26 @@ class D3RM(DiscreteDiffusion):
         seg_len = 128
         hop_size = seg_len * (1-self.inpainting_ratio)
 
-        n_seg = int((total_frame - seg_len) // hop_size + 1)
+        # n_seg = int((total_frame - seg_len) // hop_size + 1)
+        n_seg = int(total_frame // hop_size) + 1
 
         frame_outs = torch.zeros(shape, dtype=torch.int)
 
         for seg in tqdm(range(n_seg)):
             start = int(seg * hop_size)
             end = start + seg_len
+            
             leadsheet_pad = leadsheet[:, int(start):int(end)].to(self.device)
             if self.ref_arr_style_path != None:
-                prmat_pad = prmat[:seg_len].unsqueeze(dim=0).to(self.device)
+                prmat_pad = prmat[:seg_len].to(self.device)
             else:
                 prmat_pad = prmat[:, int(start):int(end)].to(self.device)
-
-            style_emb = self._encode_style(prmat_pad).squeeze(1)
+                
+            if seg_len > leadsheet_pad.shape[1]:
+                n_pad = seg_len - leadsheet_pad.shape[1]
+                leadsheet_pad = F.pad(leadsheet_pad, (0, 0, 0, n_pad, 0, 0), mode='constant', value=0)
+                prmat_pad = F.pad(prmat_pad, (0, 0, 0, n_pad, 0, 0), mode='constant', value=0)
+            style_emb = self._encode_style(prmat_pad)
 
             # print(start, end, seg_len, seg, hop_size, leadsheet_pad.shape)
             # print(leadsheet_pad.shape)
@@ -251,7 +257,10 @@ class D3RM(DiscreteDiffusion):
             #     plt.close()
                     
             sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
-            frame_outs[:, start:end] = sample[:, :seg_len]
+            if end > total_frame:
+                frame_outs[:, start:] = sample[:, :seg_len-(end-total_frame)]
+            else:
+                frame_outs[:, start:end] = sample[:, :seg_len]
 
             # for idx in range(len(frame_out)):
             #     # frame out
