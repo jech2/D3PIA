@@ -8,7 +8,7 @@ trainer:
   gradient_clip_algorithm: norm
   gradient_clip_val: 1.0
   accumulate_grad_batches: 1
-  devices: 2
+  devices: 1
   accelerator: gpu
   strategy: ddp
   log_every_n_steps: 10
@@ -56,6 +56,9 @@ model:
   reverse_sampling: True
   inpainting_ratio: 0 # how much to inpaint
   repaint: 5
+  use_style_enc: False # check the decoder parameter use_style_enc is same as this
+  style_enc_ckpt: pretrained/polydis/model_master_final.pt
+  ref_arr_style_path: null
 
   encoder:
     class_path: transcription.decoder.LSTM_NATTEN
@@ -71,6 +74,7 @@ model:
       n_layers: 10
       cross_condition: self
       type: encoder
+      use_style_enc: False # we only use style encoder in decoder
 
   decoder:  
     class_path: transcription.decoder.TransModel
@@ -89,6 +93,7 @@ model:
       num_class: 3
       classifier_free_guidance: False
       features_embed_dim: 96
+      use_style_enc: False
 
   optimizer:
     class_path: torch.optim.AdamW
@@ -109,7 +114,7 @@ model:
 
 
 data:
-  data_dir: './data/POP909-Dataset/POP909_processed'
+  data_dir: './data/POP909-Dataset/POP909_processed_polyffusion_split'
   batch_size: 4
   num_workers: 12
   # train: True
