@@ -183,7 +183,7 @@ class D3RM(DiscreteDiffusion):
         test_metric = defaultdict(list)
 
         shape = leadsheet.shape
-        seg_len = 128
+        seg_len = 128 
         hop_size = seg_len * (1-self.inpainting_ratio)
 
         # n_seg = int((total_frame - seg_len) // hop_size + 1)
