@@ -809,7 +809,7 @@ class POP909(Pop1k7):
 
         # # remove prev npy file
         # if os.path.exists(npy_path):
-            # os.remove(npy_path)
+        #     os.remove(npy_path)
             
         if not os.path.exists(npy_path):
             print('converting midi to piano roll npy')
@@ -817,7 +817,7 @@ class POP909(Pop1k7):
             sym_obj = midi_parser.sym_music_container
             # piano_rolls, piano_roll_xs, note_infos = get_absolute_time_mat(sym_obj, pr_res=self.pr_res, chord_style=self.chord_style)
  
-            piano_rolls, grid = get_grid_quantized_time_mat(sym_obj, chord_style='pop909', add_chord_labels_to_pr=True)
+            piano_rolls, grid = get_grid_quantized_time_mat(sym_obj, chord_style='pop909', add_chord_labels_to_pr=True, melody_ins_ids=[0], arrangement_ins_ids=[0,1,2])
             prmat = make_grid_quantized_note_prmat(sym_obj, grid, value='duration', do_slicing=False, inst_ids=[2]) # added input inst ids as arr only
 
             print(piano_rolls[0].shape, prmat.shape)
