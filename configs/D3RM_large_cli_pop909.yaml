@@ -48,7 +48,6 @@ model:
   auxiliary_loss_weight: 5.0e-4
   adaptive_auxiliary_loss: true
   mask_weight: [1, 1]
-  classifier_free_guidance: False
   onset_suppress_sample: False
   onset_weight_kl: False
   no_mask: False
@@ -56,7 +55,7 @@ model:
   reverse_sampling: True
   inpainting_ratio: 0 # how much to inpaint
   repaint: 5
-  use_style_enc: True # check the decoder parameter use_style_enc is same as this
+  use_style_enc: False # check the decoder parameter use_style_enc is same as this
   style_enc_ckpt: pretrained/polydis/model_master_final.pt
   ref_arr_style_path: null
 
@@ -91,9 +90,12 @@ model:
       spatial_size: [128,88]
       num_state: 4
       num_class: 3
-      classifier_free_guidance: False
+      classifier_free_guidance: True
+      cfg_config:
+        cond_scale: 2
+        cond_drop_prob: 0.05
       features_embed_dim: 96
-      use_style_enc: True
+      use_style_enc: False
 
   optimizer:
     class_path: torch.optim.AdamW

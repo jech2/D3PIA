@@ -20,6 +20,7 @@ class TransModel(nn.Module):
                 use_style_enc: bool,
                 num_state: int = 5,
                 classifier_free_guidance: bool = False,
+                cfg_config: dict = None,
                 features_embed_dim: int = 128,
                 num_class: int = 4,
                  ):
@@ -60,9 +61,12 @@ class TransModel(nn.Module):
         # classifier_free_guidance
         if classifier_free_guidance:
             self.use_cfg = True
-            # self.cond_scale = cond_scale
-            # self.cond_drop_prob = cond_drop_prob
-            self.null_features_emb = nn.Parameter(th.randn(1, 128)) # null embedding for cfg
+            self.cond_scale = cfg_config["cond_scale"]
+            self.cond_drop_prob = cfg_config["cond_drop_prob"]
+            print('Use CFG with cond_scale: ', self.cond_scale, 'cond_drop_prob: ', self.cond_drop_prob)
+            # self.null_feature_emb = nn.Parameter(th.randn(1, self.features_embed_dim)) # null embedding for cfg
+            # multiply elements in self.spatial_size in 1 line
+            self.null_feature_emb = nn.Parameter(th.randn(th.prod(th.tensor(self.spatial_size)), self.features_embed_dim))
         else:
             self.use_cfg = False
         
@@ -76,8 +80,10 @@ class TransModel(nn.Module):
         feature = feature.reshape(feature.shape[0], -1, feature.shape[-1]) # B x T*88 x H
         if self.use_cfg == True:
             if cond_drop_prob != 1: cond_drop_prob = self.cond_drop_prob
-            keep_mask = th.zeros((batch,1,1), device=self.devices).float().uniform_(0, 1) < (1 - cond_drop_prob)
-            null_cond_emb = self.null_feature_emb.repeat(label.shape[0], label.shape[1], 1) # B x T*88 x label_embed_dim
+            keep_mask = th.zeros((batch,1,1), device=feature.device).float().uniform_(0, 1) < (1 - cond_drop_prob)
+            # null_cond_emb = self.null_feature_emb.repeat(label.shape[0], label.shape[1], 1) # B x T*88 x label_embed_dim
+            null_cond_emb = self.null_feature_emb.repeat(label.shape[0], 1, 1) # B x T*88 x label_embed_dim
+            
             feature = th.where(keep_mask, feature, null_cond_emb) 
         
         assert label.max() <= self.label_emb.num_embeddings - 1 and label.min() >= 0, f"Label out of range: {label.max()} {label.min()} {self.label_emb.num_embeddings}"

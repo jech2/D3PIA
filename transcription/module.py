@@ -331,6 +331,12 @@ class D3RM(DiscreteDiffusion):
             else:
                 assert self.saved_encoder_features is not None
                 out = self.decoder(x_t, self.saved_encoder_features, t, style_emb)
+            
+            if hasattr(self.decoder, 'cond_scale'):
+                cond_scale = self.decoder.cond_scale
+                null_out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, cond_drop_prob=1.)
+                out = out * cond_scale + null_out * (1-cond_scale)
+                    
             # if t[0].item() == 0: self.saved_encoder_features = None
 
         assert out.size(0) == x_t.size(0)

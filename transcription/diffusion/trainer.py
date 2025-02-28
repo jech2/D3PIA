@@ -87,7 +87,6 @@ class DiscreteDiffusion(pl.LightningModule):
         auxiliary_loss_weight: float,
         adaptive_auxiliary_loss: bool,
         mask_weight: List[float],
-        classifier_free_guidance: bool,
         onset_suppress_sample,
         onset_weight_kl,
         no_mask: bool,

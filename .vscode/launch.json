@@ -8,13 +8,13 @@
             "name": "fit",
             "type": "debugpy",
             "request": "launch",
-            "program": "main_cli.py",
+            "program": "main_cli_pop909.py",
             "console": "integratedTerminal",
             "cwd": "/workspace/eunjin/d3rm",
             "args": [
                 "fit",
                 "-c",
-                "./configs/D3RM_cli.yaml",
+                "./configs/D3RM_large_cli_pop909.yaml",
             ],
             "env": {
                 "PYTHONPATH": "${workspaceFolder}${pathSeparator}${env:PYTHONPATH}"
