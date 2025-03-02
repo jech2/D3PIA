@@ -809,7 +809,7 @@ class POP909(Pop1k7):
 
         # # remove prev npy file
         # if os.path.exists(npy_path):
-        #     os.remove(npy_path)
+            # os.remove(npy_path)
             
         if not os.path.exists(npy_path):
             print('converting midi to piano roll npy')
@@ -916,6 +916,7 @@ class POP909(Pop1k7):
         return {
             'arrangement': cropped_piano_rolls[0],
             'leadsheet': cropped_piano_rolls[1],
+            'chord': cropped_piano_rolls[2],
             'prmat': prmat,
             'fname': self.data_path[index]
         }

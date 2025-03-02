@@ -110,6 +110,7 @@ class D3RM(DiscreteDiffusion):
     def training_step(self, batch, batch_idx):
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
+        chord = batch['chord'].to(self.device).to(torch.float32) # B x T x 88
 
         prmat = batch['prmat'].to(self.device).to(torch.float32)
         
@@ -118,7 +119,7 @@ class D3RM(DiscreteDiffusion):
         # forward
         arrangement = arrangement.reshape(arrangement.shape[0], -1)
 
-        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, return_loss=True)
+        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, return_loss=True, cfg_features=chord)
         self.log('train/diffusion_loss', disc_diffusion_loss['loss'].mean(), prog_bar=True, logger=True, on_step=True, on_epoch=False)
         self.log('lr', self.trainer.optimizers[0].param_groups[0]['lr'])
 
@@ -128,7 +129,7 @@ class D3RM(DiscreteDiffusion):
 
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
-
+        chord = batch['chord'].to(self.device).to(torch.float32) # B x T x 88
 
         prmat = batch['prmat'].to(self.device).to(torch.float32)
         style_emb = self._encode_style(prmat)
@@ -136,7 +137,7 @@ class D3RM(DiscreteDiffusion):
         shape = arrangement.shape
         # Forward step (for loss calculation)    
         arrangement = arrangement.reshape(arrangement.shape[0], -1)
-        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, return_loss=True)
+        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, return_loss=True, cfg_features=chord)
         frame_out, _ = self.sample_func(leadsheet, prev_piano=None, style_emb=style_emb) # frame out: B x T x 88 x C
         accuracy = (frame_out == arrangement).float()
         validation_metric = defaultdict(list)

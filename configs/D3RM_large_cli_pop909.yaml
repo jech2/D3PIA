@@ -12,8 +12,8 @@ trainer:
   accelerator: gpu
   strategy: ddp
   log_every_n_steps: 10
-  check_val_every_n_epoch: null
-  val_check_interval: 2500
+  check_val_every_n_epoch: 20
+  val_check_interval: null
   # enable_checkpointing: True
   max_steps: 800000
 
@@ -93,7 +93,8 @@ model:
       classifier_free_guidance: True
       cfg_config:
         cond_scale: 2
-        cond_drop_prob: 0.05
+        cond_drop_prob: 0.1
+        cfg_mode: "chord"
       features_embed_dim: 96
       use_style_enc: False
 

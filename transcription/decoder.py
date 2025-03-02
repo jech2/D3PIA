@@ -63,6 +63,7 @@ class TransModel(nn.Module):
             self.use_cfg = True
             self.cond_scale = cfg_config["cond_scale"]
             self.cond_drop_prob = cfg_config["cond_drop_prob"]
+            self.cfg_mode = cfg_config["cfg_mode"]
             print('Use CFG with cond_scale: ', self.cond_scale, 'cond_drop_prob: ', self.cond_drop_prob)
             # self.null_feature_emb = nn.Parameter(th.randn(1, self.features_embed_dim)) # null embedding for cfg
             # multiply elements in self.spatial_size in 1 line
@@ -71,7 +72,7 @@ class TransModel(nn.Module):
             self.use_cfg = False
         
 
-    def forward(self, label, feature, t, style_emb=None, cond_drop_prob=None):
+    def forward(self, label, feature, t, style_emb=None, cond_drop_prob=None, cfg_feature=None):
         # feature (=cond_emb) : B x T*88 x H
         # label (=x_t) : B x T*88 x 1
         # feature are concatanated with label as input to model
@@ -80,11 +81,17 @@ class TransModel(nn.Module):
         feature = feature.reshape(feature.shape[0], -1, feature.shape[-1]) # B x T*88 x H
         if self.use_cfg == True:
             if cond_drop_prob != 1: cond_drop_prob = self.cond_drop_prob
-            keep_mask = th.zeros((batch,1,1), device=feature.device).float().uniform_(0, 1) < (1 - cond_drop_prob)
-            # null_cond_emb = self.null_feature_emb.repeat(label.shape[0], label.shape[1], 1) # B x T*88 x label_embed_dim
-            null_cond_emb = self.null_feature_emb.repeat(label.shape[0], 1, 1) # B x T*88 x label_embed_dim
             
-            feature = th.where(keep_mask, feature, null_cond_emb) 
+            if self.cfg_mode == 'chord':
+                if cfg_feature is not None:
+                    if th.rand(1).item() < cond_drop_prob:
+                        feature = cfg_feature
+            elif self.cfg_mode == 'null':
+                keep_mask = th.zeros((batch,1,1), device=feature.device).float().uniform_(0, 1) < (1 - cond_drop_prob)
+                # null_cond_emb = self.null_feature_emb.repeat(label.shape[0], label.shape[1], 1) # B x T*88 x label_embed_dim
+                null_cond_emb = self.null_feature_emb.repeat(label.shape[0], 1, 1) # B x T*88 x label_embed_dim
+                
+                feature = th.where(keep_mask, feature, null_cond_emb) 
         
         assert label.max() <= self.label_emb.num_embeddings - 1 and label.min() >= 0, f"Label out of range: {label.max()} {label.min()} {self.label_emb.num_embeddings}"
         label_emb = self.label_emb(label) # B x T*88 x label_embed_dim
