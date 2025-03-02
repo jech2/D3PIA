@@ -67,7 +67,10 @@ class TransModel(nn.Module):
             print('Use CFG with cond_scale: ', self.cond_scale, 'cond_drop_prob: ', self.cond_drop_prob)
             # self.null_feature_emb = nn.Parameter(th.randn(1, self.features_embed_dim)) # null embedding for cfg
             # multiply elements in self.spatial_size in 1 line
-            self.null_feature_emb = nn.Parameter(th.randn(th.prod(th.tensor(self.spatial_size)), self.features_embed_dim))
+            if self.cfg_mode == "null":
+                self.null_feature_emb = nn.Parameter(th.randn(th.prod(th.tensor(self.spatial_size)), self.features_embed_dim))
+            else:
+                self.null_feature_emb = None
         else:
             self.use_cfg = False
         

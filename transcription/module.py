@@ -322,7 +322,7 @@ class D3RM(DiscreteDiffusion):
                 feature = self.encoder(cond_audio)
                 feature_for_cfg = self.encoder(cond_chord_for_cfg) if cond_chord_for_cfg is not None else None
                 
-            out = self.decoder(x_t, feature, t, style_emb)
+            out = self.decoder(x_t, feature, t, style_emb, cfg_feature=feature_for_cfg)
         if sampling==True:
             if t[0].item() == self.num_timesteps-1:
                 if isinstance(self.encoder, LSTM_NATTEN):
