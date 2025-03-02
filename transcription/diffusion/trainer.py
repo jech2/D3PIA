@@ -273,28 +273,19 @@ class DiscreteDiffusion(pl.LightningModule):
 
         return log_probs
 
-    def predict_start(self, log_x_t, cond_audio, style_emb, t, sampling=False, cond_chord_for_cfg=None):          # p(x0|xt)
+    def predict_start(self, log_x_t, cond_audio, style_emb, t, sampling=False):          # p(x0|xt)
         x_t = log_onehot_to_index(log_x_t)
         if sampling==False:
             feature = self.encoder(cond_audio)
-            if cond_chord_for_cfg is not None:
-                feature_for_cfg = self.encoder(cond_chord_for_cfg)
-            else:
-                feature_for_cfg = None
-            out = self.decoder(x_t, feature, feature_for_cfg, t, style_emb)
+            out = self.decoder(x_t, feature, t, style_emb)
         if sampling==True:
             if t[0].item() == self.num_timesteps-1:
                 feature = self.encoder(cond_audio)
-                if cond_chord_for_cfg is not None:
-                    feature_for_cfg = self.encoder(cond_chord_for_cfg)
-                else:
-                    feature_for_cfg = None
                 out = self.decoder(x_t, feature, t, style_emb)
                 self.saved_encoder_features = feature
-                self.saved_encoder_features_for_cfg = feature_for_cfg
             else:
                 assert self.saved_encoder_features is not None
-                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, cfg_feature=self.saved_encoder_features_for_cfg)
+                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb)
             if t[0].item() == 0: self.saved_encoder_features = None
 
         assert out.size(0) == x_t.size(0)
@@ -378,10 +369,10 @@ class DiscreteDiffusion(pl.LightningModule):
         return torch.clamp(log_EV_xtmin_given_xt_given_xstart, -70, 0)
 
 
-    def p_pred(self, log_x, cond_audio, t, style_emb=None, target=None, mask=None, repaint=1, cfg_features=None):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
+    def p_pred(self, log_x, cond_audio, t, style_emb=None, target=None, mask=None, repaint=1):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
         # p_pred for sampling
         if self.parametrization == 'x0':
-            log_x_recon = self.predict_start(log_x, cond_audio, style_emb, t, sampling=True, cond_chord_for_cfg=cfg_features)
+            log_x_recon = self.predict_start(log_x, cond_audio, style_emb, t, sampling=True)
             if target is not None and mask is not None:
                 log_x_recon = log_x_recon * (1 - mask) + target * mask
             if self.reverse_sampling:
@@ -410,8 +401,8 @@ class DiscreteDiffusion(pl.LightningModule):
     
 
     @torch.no_grad()
-    def p_sample(self, log_x, cond_audio, t, style_emb=None, cond_drop_prob=None, cfg_features=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
-        model_log_prob = self.p_pred(log_x, cond_audio, t, style_emb, cfg_features=cfg_features) # onset, reonset -> 2, 4 (0~4)
+    def p_sample(self, log_x, cond_audio, t, style_emb=None, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
+        model_log_prob = self.p_pred(log_x, cond_audio, t, style_emb) # onset, reonset -> 2, 4 (0~4)
         if self.onset_suppress: # suppress onset, offsets when sampling
             model_log_prob[:, 1, :] = model_log_prob[:, 1, :] * (1 + self.onset_suppress)
             model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
@@ -601,7 +592,7 @@ class DiscreteDiffusion(pl.LightningModule):
             with torch.no_grad():
                 for diffusion_index in range(start_step-1, -1, -1):
                     t = torch.full((batch_size,), diffusion_index, device=device, dtype=torch.long) # make batch tensor filled with value 't'
-                    log_z = self.p_sample(log_z, cond_audio, t, style_emb, cfg_features=cfg_features)     # log_z is log_onehot
+                    log_z = self.p_sample(log_z, cond_audio, t, style_emb)     # log_z is log_onehot
                     if visualize_denoising:
                         labels.append(log_z.argmax(1).cpu().numpy())
 

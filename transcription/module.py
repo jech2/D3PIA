@@ -310,28 +310,34 @@ class D3RM(DiscreteDiffusion):
                     "frequency": 1,
                     }}
         
-    def predict_start(self, log_x_t, cond_audio, style_emb, t, sampling=False):
+    def predict_start(self, log_x_t, cond_audio, style_emb, t, sampling=False, cond_chord_for_cfg=None):
         # p(x0|xt)
         x_t = log_onehot_to_index(log_x_t)
         
         if sampling==False:
             if isinstance(self.encoder, LSTM_NATTEN):
                 feature = self.encoder(cond_audio, label_emb=self.decoder.label_emb)
+                feature_for_cfg = self.encoder(cond_chord_for_cfg, label_emb=self.decoder.label_emb) if cond_chord_for_cfg is not None else None
             else:
                 feature = self.encoder(cond_audio)
+                feature_for_cfg = self.encoder(cond_chord_for_cfg) if cond_chord_for_cfg is not None else None
                 
             out = self.decoder(x_t, feature, t, style_emb)
         if sampling==True:
             if t[0].item() == self.num_timesteps-1:
                 if isinstance(self.encoder, LSTM_NATTEN):
                     feature = self.encoder(cond_audio, label_emb=self.decoder.label_emb)
+                    feature_for_cfg = self.encoder(cond_chord_for_cfg, label_emb=self.decoder.label_emb) if cond_chord_for_cfg is not None else None
                 else:
                     feature = self.encoder(cond_audio)
-                out = self.decoder(x_t, feature, t, style_emb)
+                    feature_for_cfg = self.encoder(cond_chord_for_cfg) if cond_chord_for_cfg is not None else None
+        
+                out = self.decoder(x_t, feature, t, style_emb, cfg_feature=feature_for_cfg)
                 self.saved_encoder_features = feature
+                self.saved_encoder_features_for_cfg = feature_for_cfg
             else:
                 assert self.saved_encoder_features is not None
-                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb)
+                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, cfg_feature=self.saved_encoder_features_for_cfg)
             
             if hasattr(self.decoder, 'cond_scale'):
                 cond_scale = self.decoder.cond_scale
