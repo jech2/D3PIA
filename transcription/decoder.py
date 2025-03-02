@@ -82,6 +82,7 @@ class TransModel(nn.Module):
         batch = label.shape[0]
         # feature = feature.transpose(-2, -1) # B x T x 88 x H(=128)
         feature = feature.reshape(feature.shape[0], -1, feature.shape[-1]) # B x T*88 x H
+        cfg_feature = cfg_feature.reshape(cfg_feature.shape[0], -1, cfg_feature.shape[-1]) if cfg_feature is not None else None
         if self.use_cfg == True:
             if cond_drop_prob != 1: cond_drop_prob = self.cond_drop_prob
             
