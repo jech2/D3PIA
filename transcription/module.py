@@ -359,7 +359,7 @@ class D3RM(DiscreteDiffusion):
             
             if hasattr(self.decoder, 'cond_scale'):
                 cond_scale = self.decoder.cond_scale
-                null_out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, cond_drop_prob=1.)
+                null_out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, cond_drop_prob=1., cfg_feature=self.saved_encoder_features_for_cfg)
                 out = out * cond_scale + null_out * (1-cond_scale)
                     
             # if t[0].item() == 0: self.saved_encoder_features = None
