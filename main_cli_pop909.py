@@ -35,6 +35,7 @@ class D3RMCLI(LightningCLI):
                                    name=self.now,
                                    project="PianoArrDiffusion",
                                    offline=(not self.config.fit.wandb),
+                                   entity="habang",
                                    id=id)
 
         # Model checkpoint (automatically called after validation)
@@ -53,6 +54,12 @@ class D3RMCLI(LightningCLI):
         self.config.fit.model.test_save_path = f"./results/{self.now}"
         print(colored("Test results will be saved in: ", "green", attrs=['bold']), self.config.fit.model.test_save_path)
 
+        # if self.trainer.ckpt_path:
+        #     checkpoint = torch.load(self.trainer.ckpt_path, map_location="cpu")
+        #     model_keys = set(self.model.state_dict().keys())
+        #     filtered_state_dict = {k: v for k, v in checkpoint["state_dict"].items() if k in model_keys}
+        #     self.model.load_state_dict(filtered_state_dict, strict=False)
+
         
     # def before_instantiate_classes(self) -> None:
     
@@ -62,7 +69,9 @@ def cli_main():
     #             #   save_config_kwargs={"overwrite": True}, #  save_config_callback=None # when using wandb, saving config leads to conflicts.
     #               )
     data_module = POP909_DataModule
-    cli = D3RMCLI(D3RM, data_module)
+    cli = D3RMCLI(D3RM, data_module,
+                  save_config_kwargs={"overwrite": True},
+                  )
 
 if __name__ == "__main__":
     cli_main()

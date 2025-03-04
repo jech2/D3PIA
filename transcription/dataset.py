@@ -820,7 +820,7 @@ class POP909(Pop1k7):
             piano_rolls, grid = get_grid_quantized_time_mat(sym_obj, chord_style='pop909', add_chord_labels_to_pr=True, melody_ins_ids=[0], arrangement_ins_ids=[0,1,2])
             prmat = make_grid_quantized_note_prmat(sym_obj, grid, value='duration', do_slicing=False, inst_ids=[2]) # added input inst ids as arr only
 
-            print(piano_rolls[0].shape, prmat.shape)
+            print(len(piano_rolls), piano_rolls[0].shape, prmat.shape)
             assert piano_rolls[0].shape[0] == prmat.shape[0]
 
             ret = {

@@ -369,10 +369,11 @@ class DiscreteDiffusion(pl.LightningModule):
         return torch.clamp(log_EV_xtmin_given_xt_given_xstart, -70, 0)
 
 
-    def p_pred(self, log_x, cond_audio, t, style_emb=None, target=None, mask=None, repaint=1):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
+    def p_pred(self, log_x, cond_audio, t, style_emb=None, target=None, mask=None, repaint=1, chord=None):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
         # p_pred for sampling
+        print('use chord ', chord)
         if self.parametrization == 'x0':
-            log_x_recon = self.predict_start(log_x, cond_audio, style_emb, t, sampling=True)
+            log_x_recon = self.predict_start(log_x, cond_audio, style_emb, t, sampling=True, cond_chord_for_cfg=chord)
             if target is not None and mask is not None:
                 log_x_recon = log_x_recon * (1 - mask) + target * mask
             if self.reverse_sampling:
@@ -383,11 +384,11 @@ class DiscreteDiffusion(pl.LightningModule):
             raise ValueError
         return log_model_pred
     
-    def p_pred_inpainting(self, log_x, cond_audio, t, style_emb=None, prev_log_x=None, mask=None, repaint:int = 10):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
+    def p_pred_inpainting(self, log_x, cond_audio, t, style_emb=None, prev_log_x=None, mask=None, repaint:int = 10, chord=None):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
         # p_pred for sampling
         for r in range(repaint):
             if self.parametrization == 'x0':
-                log_x_recon = self.predict_start(log_x, cond_audio, t, style_emb, sampling=True)
+                log_x_recon = self.predict_start(log_x, cond_audio, style_emb, t, sampling=True, cond_chord_for_cfg=chord)
                 log_x_recon = log_x_recon * (1 - mask) + prev_log_x * mask
                 if self.reverse_sampling:
                     log_model_pred = self.q_posterior_reverse(log_x_start=log_x_recon, log_x_t=log_x, t=t)
@@ -401,8 +402,8 @@ class DiscreteDiffusion(pl.LightningModule):
     
 
     @torch.no_grad()
-    def p_sample(self, log_x, cond_audio, t, style_emb=None, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
-        model_log_prob = self.p_pred(log_x, cond_audio, t, style_emb) # onset, reonset -> 2, 4 (0~4)
+    def p_sample(self, log_x, cond_audio, t, style_emb=None, cond_drop_prob=None, chord=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
+        model_log_prob = self.p_pred(log_x, cond_audio, t, style_emb, chord=chord) # onset, reonset -> 2, 4 (0~4)
         if self.onset_suppress: # suppress onset, offsets when sampling
             model_log_prob[:, 1, :] = model_log_prob[:, 1, :] * (1 + self.onset_suppress)
             model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
@@ -410,7 +411,7 @@ class DiscreteDiffusion(pl.LightningModule):
         return out
 
     @torch.no_grad()
-    def p_sample_inpainting(self, log_x, cond_audio, t, prev_log_x, inpainting_ratio, shape, style_emb=None, cond_drop_prob=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
+    def p_sample_inpainting(self, log_x, cond_audio, t, prev_log_x, inpainting_ratio, shape, style_emb=None, cond_drop_prob=None, chord=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
         prev_log_x_reshape = prev_log_x.reshape((shape[0], -1, shape[1], shape[2])) # B x class x T x 88
         source = prev_log_x_reshape[:, :, int(shape[1]*inpainting_ratio):, :] 
         empty = torch.zeros(prev_log_x_reshape.shape, dtype=prev_log_x_reshape.dtype, device=prev_log_x_reshape.device)[:, :, :int(shape[1]*(1-inpainting_ratio)), :]
@@ -418,7 +419,7 @@ class DiscreteDiffusion(pl.LightningModule):
         prev_log_x = torch.cat([source, empty], dim=-2)
         mask = mask.reshape((mask.shape[0], mask.shape[1], -1)) # B x class x T*88
         prev_log_x = prev_log_x.reshape((mask.shape[0], mask.shape[1], -1)) # B x class x T*88
-        model_log_prob = self.p_pred_inpainting(log_x, cond_audio, t, style_emb, prev_log_x, mask, self.repaint) # onset, reonset -> 2, 4 (0~4)
+        model_log_prob = self.p_pred_inpainting(log_x, cond_audio, t, style_emb, prev_log_x, mask, self.repaint, chord=chord) # onset, reonset -> 2, 4 (0~4)
         if self.onset_suppress: # suppress onset, offsets when sampling
             model_log_prob[:, 0, :] = model_log_prob[:, 0, :] * (1 + self.onset_suppress)
             # model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
@@ -565,7 +566,8 @@ class DiscreteDiffusion(pl.LightningModule):
             audio,
             style_emb=None,
             return_logits = False,
-            visualize_denoising = False):
+            visualize_denoising = False,
+            chord=None):
 
         batch_size = audio.shape[0]
         device = self.log_at.device
@@ -592,7 +594,7 @@ class DiscreteDiffusion(pl.LightningModule):
             with torch.no_grad():
                 for diffusion_index in range(start_step-1, -1, -1):
                     t = torch.full((batch_size,), diffusion_index, device=device, dtype=torch.long) # make batch tensor filled with value 't'
-                    log_z = self.p_sample(log_z, cond_audio, t, style_emb)     # log_z is log_onehot
+                    log_z = self.p_sample(log_z, cond_audio, t, style_emb, chord)     # log_z is log_onehot
                     if visualize_denoising:
                         labels.append(log_z.argmax(1).cpu().numpy())
 
@@ -615,7 +617,8 @@ class DiscreteDiffusion(pl.LightningModule):
             inpainting_ratio: float,
             shape,
             return_logits = False,
-            visualize_denoising = False):
+            visualize_denoising = False,
+            chord=None):
         batch_size = leadsheet.shape[0]
         device = self.log_at.device
         cond_leadsheet = leadsheet # no condition for now
@@ -634,7 +637,7 @@ class DiscreteDiffusion(pl.LightningModule):
             with torch.no_grad():
                 for diffusion_index in range(start_step-1, -1, -1):
                     t = torch.full((batch_size,), diffusion_index, device=device, dtype=torch.long) # make batch tensor filled with value 't'
-                    log_z = self.p_sample_inpainting(log_z, cond_leadsheet, t, prev_log_z, inpainting_ratio, shape, style_emb)     # log_z is log_onehot
+                    log_z = self.p_sample_inpainting(log_z, cond_leadsheet, t, prev_log_z, inpainting_ratio, shape, style_emb, chord=chord)     # log_z is log_onehot
                     if visualize_denoising:
                         labels.append(log_z.argmax(1).cpu().numpy())
         else: 

@@ -107,6 +107,10 @@ class D3RM(DiscreteDiffusion):
             # print(f"unencoded txt: {prmat.shape}")
             return None
 
+    # def on_load_checkpoint(self, checkpoint):
+    #     # Custom handling for checkpoint loading
+    #     self.load_state_dict(checkpoint["state_dict"], strict=False)
+
     def training_step(self, batch, batch_idx):
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
@@ -171,7 +175,11 @@ class D3RM(DiscreteDiffusion):
             print('already inference done, skip this index', {batch_idx})
             return
                     
-        leadsheet = batch['leadsheet'].to(self.device)   
+        leadsheet = batch['leadsheet'].to(self.device)
+        if self.decoder.use_cfg and self.decoder.cfg_mode == 'chord':
+            chord = batch['chord'].to(self.device)
+        else:
+            chord = None
 
         if self.ref_arr_style_path != None:
             print('using ref_arr_style_path', self.ref_arr_style_path)
@@ -197,6 +205,12 @@ class D3RM(DiscreteDiffusion):
             end = start + seg_len
             
             leadsheet_pad = leadsheet[:, int(start):int(end)].to(self.device)
+            
+            if chord is not None:
+                chord_pad = chord[:, int(start):int(end)].to(self.device)
+            else:
+                chord_pad = None
+                
             if self.ref_arr_style_path != None:
                 prmat_pad = prmat[:seg_len].to(self.device)
             else:
@@ -206,18 +220,22 @@ class D3RM(DiscreteDiffusion):
                 n_pad = seg_len - leadsheet_pad.shape[1]
                 leadsheet_pad = F.pad(leadsheet_pad, (0, 0, 0, n_pad, 0, 0), mode='constant', value=0)
                 prmat_pad = F.pad(prmat_pad, (0, 0, 0, n_pad, 0, 0), mode='constant', value=0)
+
+                if chord_pad is not None:
+                    chord_pad = F.pad(chord_pad, (0, 0, 0, n_pad, 0, 0), mode='constant', value=0)
+            
             style_emb = self._encode_style(prmat_pad)
 
             # print(start, end, seg_len, seg, hop_size, leadsheet_pad.shape)
             # print(leadsheet_pad.shape)
             if self.inpainting_ratio == 0:
-                frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb)
+                frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_pad=chord_pad)
             else:
                 if seg == 0:
-                    frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb)
+                    frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_pad=chord_pad)
                     prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
                 else:   
-                    frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, style_emb=style_emb, visualize_denoising=True)
+                    frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, style_emb=style_emb, visualize_denoising=True, chord_pad=chord_pad)
                     # Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
                     # for idx in range(len(frame_out)):
                     #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
@@ -285,17 +303,17 @@ class D3RM(DiscreteDiffusion):
             }
             np.savez(out_fp, **output)
             
-    def sample_func(self, leadsheet, prev_piano, style_emb=None, visualize_denoising=False):
+    def sample_func(self, leadsheet, prev_piano, style_emb=None, visualize_denoising=False, chord_pad=None):
         tic = time.time()
         if self.inpainting_ratio == 0 or prev_piano is None:
             samples, labels = self.sample(leadsheet, style_emb,
-                                        visualize_denoising=visualize_denoising)
+                                        visualize_denoising=visualize_denoising, chord=chord_pad)
         else:
             with torch.no_grad():
                 samples, labels = self.sample_inpainting(leadsheet, style_emb, prev_piano, 
                                             inpainting_ratio=self.inpainting_ratio,
                                             visualize_denoising=visualize_denoising,
-                                            shape=leadsheet.shape)
+                                            shape=leadsheet.shape, chord=chord_pad)
         
         return samples['label_token'], labels
 
