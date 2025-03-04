@@ -594,7 +594,7 @@ class DiscreteDiffusion(pl.LightningModule):
             with torch.no_grad():
                 for diffusion_index in range(start_step-1, -1, -1):
                     t = torch.full((batch_size,), diffusion_index, device=device, dtype=torch.long) # make batch tensor filled with value 't'
-                    log_z = self.p_sample(log_z, cond_audio, t, style_emb, chord)     # log_z is log_onehot
+                    log_z = self.p_sample(log_z, cond_audio, t, style_emb, chord=chord)     # log_z is log_onehot
                     if visualize_denoising:
                         labels.append(log_z.argmax(1).cpu().numpy())
 
