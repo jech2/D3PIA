@@ -88,6 +88,7 @@ class DiscreteDiffusion(pl.LightningModule):
         adaptive_auxiliary_loss: bool,
         mask_weight: List[float],
         onset_suppress_sample,
+        temperature,
         onset_weight_kl,
         no_mask: bool,
         sample_from_fully_masked: bool,
@@ -420,9 +421,10 @@ class DiscreteDiffusion(pl.LightningModule):
         prev_log_x = prev_log_x.reshape((mask.shape[0], mask.shape[1], -1)) # B x class x T*88
         model_log_prob = self.p_pred_inpainting(log_x, cond_audio, t, style_emb, prev_log_x, mask, self.repaint, chord=chord) # onset, reonset -> 2, 4 (0~4)
         if self.onset_suppress: # suppress onset, offsets when sampling
+            print('onset suppress is deprecated. please use temperature')
             model_log_prob[:, 0, :] = model_log_prob[:, 0, :] * (1 + self.onset_suppress)
             # model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
-        out = self.log_sample_categorical(model_log_prob)
+        out = self.log_sample_categorical(model_log_prob, self.temperature)
         return out
 
     def log_sample_categorical(self, logits):           # use gumbel to sample onehot vector from log probability
