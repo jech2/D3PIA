@@ -88,8 +88,11 @@ class TransModel(nn.Module):
             
             if self.cfg_mode == 'chord':
                 if cfg_feature is not None:
-                    if th.rand(1).item() < cond_drop_prob:
-                        feature = cfg_feature
+                    keep_mask = th.zeros((batch,1,1), device=feature.device).float().uniform_(0, 1) < (1 - cond_drop_prob)
+                    
+                    feature = th.where(keep_mask, feature, cfg_feature)
+                    # if th.rand(1).item() < cond_drop_prob:
+                        # feature = cfg_feature
             elif self.cfg_mode == 'null':
                 keep_mask = th.zeros((batch,1,1), device=feature.device).float().uniform_(0, 1) < (1 - cond_drop_prob)
                 # null_cond_emb = self.null_feature_emb.repeat(label.shape[0], label.shape[1], 1) # B x T*88 x label_embed_dim

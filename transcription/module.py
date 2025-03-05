@@ -204,6 +204,11 @@ class D3RM(DiscreteDiffusion):
             start = int(seg * hop_size)
             end = start + seg_len
             
+            if end > shape[1]:
+                n_pad_out = end - shape[1]
+                frame_outs = F.pad(frame_outs, (0, 0, 0, n_pad_out, 0, 0), mode='constant', value=0)
+                print(frame_outs.shape)
+            
             leadsheet_pad = leadsheet[:, int(start):int(end)].to(self.device)
             
             if chord is not None:
@@ -277,7 +282,7 @@ class D3RM(DiscreteDiffusion):
                     
             sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
             if end > total_frame:
-                frame_outs[:, start:] = sample[:, :seg_len-(end-total_frame)]
+                frame_outs[:, start:total_frame] = sample[:, :seg_len-(end-total_frame)]
             else:
                 frame_outs[:, start:end] = sample[:, :seg_len]
 

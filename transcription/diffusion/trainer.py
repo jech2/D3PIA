@@ -371,7 +371,6 @@ class DiscreteDiffusion(pl.LightningModule):
 
     def p_pred(self, log_x, cond_audio, t, style_emb=None, target=None, mask=None, repaint=1, chord=None):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
         # p_pred for sampling
-        print('use chord ', chord)
         if self.parametrization == 'x0':
             log_x_recon = self.predict_start(log_x, cond_audio, style_emb, t, sampling=True, cond_chord_for_cfg=chord)
             if target is not None and mask is not None:
@@ -430,6 +429,18 @@ class DiscreteDiffusion(pl.LightningModule):
         uniform = torch.rand_like(logits) # gaussian distribution of mean 0 and variance 1
         gumbel_noise = -torch.log(-torch.log(uniform + 1e-30) + 1e-30)
         sample = (gumbel_noise + logits).argmax(dim=1)
+        log_sample = index_to_log_onehot(sample, self.num_classes)
+        return log_sample
+
+    def log_sample_categorical_temperature(self, logits, temperature=1.0):           # use gumbel to sample onehot vector from log probability
+        '''
+        Categorical sampling with temperature
+        \tau > 1 -> softer distribution
+        \tau < 1 -> sharper distribution
+        '''
+        uniform = torch.rand_like(logits) # gaussian distribution of mean 0 and variance 1
+        gumbel_noise = -torch.log(-torch.log(uniform + 1e-30) + 1e-30)
+        sample = (gumbel_noise + (logits / temperature)).argmax(dim=1)
         log_sample = index_to_log_onehot(sample, self.num_classes)
         return log_sample
 
