@@ -839,7 +839,7 @@ class POP909(Pop1k7):
 
     import numpy as np
 
-    def transpose_polydis_chord_prmat(chord_matrix, semitone_shift):
+    def transpose_polydis_chord_prmat(self, chord_matrix, semitone_shift):
         """
         Transpose the chord_matrix by semitone_shift semitones.
         
@@ -891,6 +891,8 @@ class POP909(Pop1k7):
         
         prmat = data['prmat']
 
+        chord_only_piano_rolls = np.expand_dims(chord_only_piano_rolls, axis=0)
+
         from midisym.constants import QUANTIZE_RESOLUTION
         if self.sample_length is not None and self.sample_length > piano_rolls.shape[1]:
             padding = self.sample_length - piano_rolls.shape[1]
@@ -908,14 +910,14 @@ class POP909(Pop1k7):
                 random_idx_beats_end = (random_idx + self.sample_length) // QUANTIZE_RESOLUTION
 
                 cropped_piano_rolls = piano_rolls[:, random_idx:random_idx+self.sample_length]
-                cropped_chord_only_piano_rolls = chord_only_piano_rolls[random_idx:random_idx+self.sample_length]
+                cropped_chord_only_piano_rolls = chord_only_piano_rolls[:, random_idx:random_idx+self.sample_length]
                 
                 cropped_polydis_chord_prmat = polydis_chord_prmat[random_idx_beats:random_idx_beats_end]
                 
                 prmat = prmat[random_idx:random_idx+self.sample_length]
 
                 assert cropped_piano_rolls.shape[1] == cropped_polydis_chord_prmat.shape[0] * QUANTIZE_RESOLUTION
-                assert cropped_piano_rolls.shape[1] == cropped_chord_only_piano_rolls.shape[0]
+                assert cropped_piano_rolls.shape[1] == cropped_chord_only_piano_rolls.shape[1]
                 assert cropped_piano_rolls.shape[1] == self.sample_length
                 assert cropped_piano_rolls.shape[1] == prmat.shape[0]
                 # assert (cropped_piano_rolls != 0).any()
@@ -946,34 +948,8 @@ class POP909(Pop1k7):
             cropped_polydis_chord_prmat = self.transpose_polydis_chord_prmat(cropped_polydis_chord_prmat, transpose_val)
             
             # cropped_piano_rolls = cropped_piano_rolls.astype(np.float32)
-
-            # for i, piano_roll in enumerate(piano_rolls):
-            #     import matplotlib.pyplot as plt
-            #     os.makedirs('tests/sample', exist_ok=True)
-            #     # 전체 피아노 롤
-            #     plt.figure(figsize=(12, 6))  # 캔버스 크기
-            #     plt.imshow(piano_roll.T, aspect="auto", origin="lower", interpolation="nearest")
-            #     plt.xlabel("Time (frame)", fontsize=12)
-            #     plt.ylabel("Pitch", fontsize=12)
-            #     plt.title("Full Piano Roll", fontsize=14)
-            #     plt.savefig(f"tests/sample/absolute_time_mat_{i}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
-
-            #     # 랜덤 프레임 피아노 롤
-            #     plt.figure(figsize=(12, 6))  # 캔버스 크기
-            #     plt.imshow(cropped_piano_rolls[0].T, aspect="auto", origin="lower", interpolation="nearest")
-            #     plt.xlabel("Time (frame)", fontsize=12)
-            #     plt.ylabel("Pitch", fontsize=12)
-            #     plt.title("Random Frame Piano Roll", fontsize=14)
-            #     plt.savefig(f"tests/sample/absolute_time_mat_{index}_random.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
-            #     plt.close()
-            #     # 랜덤 프레임 피아노 롤
-            #     plt.figure(figsize=(12, 6))  # 캔버스 크기
-            #     plt.imshow(cropped_piano_rolls[1].T, aspect="auto", origin="lower", interpolation="nearest")
-            #     plt.xlabel("Time (frame)", fontsize=12)
-            #     plt.ylabel("Pitch", fontsize=12)
-            #     plt.title("Random Frame Piano Roll", fontsize=14)
-            #     plt.savefig(f"tests/sample/absolute_time_mat_{index}_random_ls.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
-            #     plt.close()
+        else:
+            transpose_val = 0
 
         cropped_piano_rolls = th.tensor(cropped_piano_rolls).long()
         cropped_chord_only_piano_rolls = th.tensor(cropped_chord_only_piano_rolls).long()
@@ -984,10 +960,61 @@ class POP909(Pop1k7):
         # shape check
         assert cropped_piano_rolls.shape[1] == prmat.shape[0]
 
-        leadsheet = cropped_piano_rolls[0] + cropped_chord_only_piano_rolls
-        arrangement = cropped_piano_rolls[0] + cropped_piano_rolls[2]
+
+
+        cropped_chord_only_piano_rolls = cropped_chord_only_piano_rolls.squeeze()
+        
+        leadsheet = th.maximum(cropped_piano_rolls[0], cropped_chord_only_piano_rolls)
+        arrangement = th.maximum(cropped_piano_rolls[0], cropped_piano_rolls[2])
         if self.bridge_in_arrangement:
-            arrangement += cropped_piano_rolls[1]
+            arrangement = th.maximum(arrangement, cropped_piano_rolls[1])
+
+        # import matplotlib.pyplot as plt
+        # os.makedirs('tests/sample', exist_ok=True)
+        # # 전체 피아노 롤
+        # plt.figure(figsize=(12, 6))  # 캔버스 크기
+        # plt.imshow(arrangement.numpy().T, aspect="auto", origin="lower", interpolation="nearest")
+        # plt.xlabel("Time (frame)", fontsize=12)
+        # plt.ylabel("Pitch", fontsize=12)
+        # plt.title("Full Piano Roll", fontsize=14)
+        # plt.savefig(f"tests/sample/time_mat_{index}_arr_{transpose_val}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+
+        # # 랜덤 프레임 피아노 롤
+        # plt.figure(figsize=(12, 6))  # 캔버스 크기
+        # plt.imshow(leadsheet.numpy().T, aspect="auto", origin="lower", interpolation="nearest")
+        # plt.xlabel("Time (frame)", fontsize=12)
+        # plt.ylabel("Pitch", fontsize=12)
+        # plt.title("Random Frame Piano Roll", fontsize=14)
+        # plt.savefig(f"tests/sample/time_mat_{index}_ls_{transpose_val}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+        # plt.close()
+        # # 랜덤 프레임 피아노 롤
+        # plt.figure(figsize=(12, 6))  # 캔버스 크기
+        # plt.imshow(cropped_chord_only_piano_rolls.numpy().T, aspect="auto", origin="lower", interpolation="nearest")
+        # plt.xlabel("Time (frame)", fontsize=12)
+        # plt.ylabel("Pitch", fontsize=12)
+        # plt.title("Random Frame Piano Roll", fontsize=14)
+        # plt.savefig(f"tests/sample/time_mat_{index}_chord_{transpose_val}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+        # plt.close()
+
+        # # 랜덤 프레임 피아노 롤
+        # plt.figure(figsize=(12, 6))  # 캔버스 크기
+        # plt.imshow(cropped_polydis_chord_prmat.numpy().T, aspect="auto", origin="lower", interpolation="nearest")
+        # plt.xlabel("Time (frame)", fontsize=12)
+        # plt.ylabel("Pitch", fontsize=12)
+        # plt.title("Random Frame Piano Roll", fontsize=14)
+        # plt.savefig(f"tests/sample/time_mat_{index}_chord_polydis_{transpose_val}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+        # plt.close()
+
+
+        # # 랜덤 프레임 피아노 롤
+        # plt.figure(figsize=(12, 6))  # 캔버스 크기
+        # plt.imshow(prmat.numpy().T, aspect="auto", origin="lower", interpolation="nearest")
+        # plt.xlabel("Time (frame)", fontsize=12)
+        # plt.ylabel("Pitch", fontsize=12)
+        # plt.title("Random Frame Piano Roll", fontsize=14)
+        # plt.savefig(f"tests/sample/time_mat_{index}_prmat_{transpose_val}.png", dpi=300, bbox_inches="tight", pad_inches=0.1)
+        # plt.close()
+
 
         return {
             'arrangement': arrangement,
