@@ -439,8 +439,8 @@ class DiscreteDiffusion(pl.LightningModule):
     def log_sample_categorical_temperature(self, logits, temperature=1.0):           # use gumbel to sample onehot vector from log probability
         '''
         Categorical sampling with temperature
-        \tau > 1 -> softer distribution
-        \tau < 1 -> sharper distribution
+        \tau < 1 -> softer distribution
+        \tau > 1 -> sharper distribution
         '''
         uniform = torch.rand_like(logits) # gaussian distribution of mean 0 and variance 1
         gumbel_noise = -torch.log(-torch.log(uniform + 1e-30) + 1e-30)

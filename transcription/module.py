@@ -294,6 +294,7 @@ class D3RM(DiscreteDiffusion):
             #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
             #     plt.close()
 
+        frame_outs = frame_outs[:, :total_frame]
 
         Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
         for idx in range(len(frame_outs)):

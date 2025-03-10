@@ -786,8 +786,9 @@ class Pop1k7(Dataset):
 
 class POP909(Pop1k7):
     def __init__(self, path='data/POP909-Dataset', groups=None, sequence_length=313, seed=1, 
-                 random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False, chord_style='pop909'):
+                 random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False, chord_style='pop909', bridge_in_arrangement):
         super().__init__(path, groups, sequence_length, seed, random_sample, transform, load_mode, pr_res, transpose, chord_style) 
+        self.bridge_in_arrangement = bridge_in_arrangement 
 
     @classmethod
     def available_groups(cls):
@@ -808,8 +809,8 @@ class POP909(Pop1k7):
         npy_path = input_path.replace('.mid', f'_piano_rolls_{self.pr_res}_with_style_input_arr.npy')
 
         # # remove prev npy file
-        if os.path.exists(npy_path):
-            os.remove(npy_path)
+        # if os.path.exists(npy_path):
+            # os.remove(npy_path)
             
         if not os.path.exists(npy_path):
             print('converting midi to piano roll npy')
@@ -820,15 +821,63 @@ class POP909(Pop1k7):
             piano_rolls, grid = get_grid_quantized_time_mat(sym_obj, chord_style='pop909', add_chord_labels_to_pr=True, melody_ins_ids=[0], arrangement_ins_ids=[0, 2])
             prmat = make_grid_quantized_note_prmat(sym_obj, grid, value='duration', do_slicing=False, inst_ids=[2]) # added input inst ids as arr only
 
-            print(len(piano_rolls), piano_rolls[0].shape, prmat.shape)
-            assert piano_rolls[0].shape[0] == prmat.shape[0]
+            track_mat = piano_rolls['track_mat']
+            chord_mat = piano_rolls['chord_mat']
+            polydis_chord_mat = piano_rolls['polydis_chord_mat']
+
+            print(len(track_mat), track_mat[0].shape, chord_mat.shape, polydis_chord_mat.shape, prmat.shape)
+            assert track_mat[0].shape[0] == prmat.shape[0]
 
             ret = {
-                'piano_rolls': piano_rolls,
+                'track_mat': track_mat, # for each instrument's track
+                'chord_mat': chord_mat, # for chord conditioning
+                'polydis_chord_mat': polydis_chord_mat, # for polyphonic chord conditioning
                 'prmat': prmat, # for style conditioning. time x pitch , value is quantized duration index(16th note unit) prmat[o, p] = d
             }
 
             np.save(npy_path, ret)
+
+    import numpy as np
+
+    def transpose_polydis_chord_prmat(chord_matrix, semitone_shift):
+        """
+        Transpose the chord_matrix by semitone_shift semitones.
+        
+        chord_matrix shape: (T, 36)
+        - Each row is [root_one_hot(12), chroma(12), bass_one_hot(12)]
+        
+        semitone_shift: int
+        - Number of semitones to transpose (can be positive or negative)
+        
+        Returns:
+        transposed_matrix: np.ndarray of shape (T, 36)
+        """
+        # Ensure the shift is taken mod 12 so that shifting by 13 = shift by 1, etc.
+        shift = semitone_shift % 12
+        
+        # Prepare an output matrix of the same shape
+        transposed_matrix = np.zeros_like(chord_matrix)
+
+        for t in range(chord_matrix.shape[0]):
+            row = chord_matrix[t, :]
+            
+            # Extract the three 12-dimensional segments
+            root_vector = row[0:12]
+            chroma_vector = row[12:24]
+            bass_vector = row[24:36]
+            
+            # Circularly shift each of the three segments
+            root_shifted = np.roll(root_vector, shift)
+            chroma_shifted = np.roll(chroma_vector, shift)
+            bass_shifted = np.roll(bass_vector, shift)
+            
+            # Recombine into the transposed row
+            transposed_matrix[t, 0:12]   = root_shifted
+            transposed_matrix[t, 12:24] = chroma_shifted
+            transposed_matrix[t, 24:36] = bass_shifted
+
+        return transposed_matrix
+
 
     def __getitem__(self, index):
         # piano_roll_fp = self.data_path[index].replace('.mid', f'_piano_rolls_{self.pr_res}.npy')
@@ -836,29 +885,45 @@ class POP909(Pop1k7):
         
         data = np.load(piano_roll_fp, allow_pickle=True).item()
 
-        piano_rolls = np.array(data['piano_rolls'])
+        piano_rolls = np.array(data['track_mat'])
+        chord_only_piano_rolls = np.array(data['chord_mat'])
+        polydis_chord_prmat = np.array(data['polydis_chord_mat'])
+        
         prmat = data['prmat']
 
+        from midisym.constants import QUANTIZE_RESOLUTION
         if self.sample_length is not None and self.sample_length > piano_rolls.shape[1]:
             padding = self.sample_length - piano_rolls.shape[1]
+            padding_beats = padding // QUANTIZE_RESOLUTION
             piano_rolls = np.pad(piano_rolls, ((0, 0), (0, padding), (0, 0)), mode='constant')
+            chord_only_piano_rolls = np.pad(chord_only_piano_rolls, ((0, padding), (0, 0)), mode='constant')
+            polydis_chord_prmat = np.pad(polydis_chord_prmat, ((0, padding_beats), (0, 0)), mode='constant')
             prmat = np.pad(prmat, ((0, padding), (0, 0)), mode='constant')
             cropped_piano_rolls = piano_rolls
         else:
             if self.sample_length is not None:
-                random_idx = np.random.randint(0, (piano_rolls.shape[1]-self.sample_length + 1) / self.pr_res)
-                
+                random_idx = np.random.randint(0, (piano_rolls.shape[1]-self.sample_length + 1) / self.pr_res) # 16th note unit                
                 random_idx = random_idx * self.pr_res
+                random_idx_beats = random_idx // QUANTIZE_RESOLUTION
+                random_idx_beats_end = (random_idx + self.sample_length) // QUANTIZE_RESOLUTION
 
                 cropped_piano_rolls = piano_rolls[:, random_idx:random_idx+self.sample_length]
+                cropped_chord_only_piano_rolls = chord_only_piano_rolls[random_idx:random_idx+self.sample_length]
+                
+                cropped_polydis_chord_prmat = polydis_chord_prmat[random_idx_beats:random_idx_beats_end]
+                
                 prmat = prmat[random_idx:random_idx+self.sample_length]
 
+                assert cropped_piano_rolls.shape[1] == cropped_polydis_chord_prmat.shape[0] * QUANTIZE_RESOLUTION
+                assert cropped_piano_rolls.shape[1] == cropped_chord_only_piano_rolls.shape[0]
                 assert cropped_piano_rolls.shape[1] == self.sample_length
                 assert cropped_piano_rolls.shape[1] == prmat.shape[0]
                 # assert (cropped_piano_rolls != 0).any()
                 
             else:
                 cropped_piano_rolls = piano_rolls
+                cropped_chord_only_piano_rolls = chord_only_piano_rolls
+                cropped_polydis_chord_prmat = polydis_chord_prmat
 
         if self.groups == ['train'] and self.transpose and random.random() < 0.5:
             # considering piano roll pitch min max, reset the transpose value
@@ -876,7 +941,10 @@ class POP909(Pop1k7):
             transpose_val = random.randint(min_transpose, max_transpose + 1)            
 
             cropped_piano_rolls = self.transpose_pianoroll(cropped_piano_rolls, transpose_val)
-
+            cropped_chord_only_piano_rolls = self.transpose_pianoroll(cropped_chord_only_piano_rolls, transpose_val)
+            
+            cropped_polydis_chord_prmat = self.transpose_polydis_chord_prmat(cropped_polydis_chord_prmat, transpose_val)
+            
             # cropped_piano_rolls = cropped_piano_rolls.astype(np.float32)
 
             # for i, piano_roll in enumerate(piano_rolls):
@@ -908,15 +976,24 @@ class POP909(Pop1k7):
             #     plt.close()
 
         cropped_piano_rolls = th.tensor(cropped_piano_rolls).long()
+        cropped_chord_only_piano_rolls = th.tensor(cropped_chord_only_piano_rolls).long()
+        cropped_polydis_chord_prmat = th.tensor(cropped_polydis_chord_prmat).float() # to float32
+        
         prmat = th.tensor(prmat).float() # to float32
 
         # shape check
         assert cropped_piano_rolls.shape[1] == prmat.shape[0]
 
+        leadsheet = cropped_piano_rolls[0] + cropped_chord_only_piano_rolls
+        arrangement = cropped_piano_rolls[0] + cropped_piano_rolls[2]
+        if self.bridge_in_arrangement:
+            arrangement += cropped_piano_rolls[1]
+
         return {
-            'arrangement': cropped_piano_rolls[0],
-            'leadsheet': cropped_piano_rolls[1],
-            'chord': cropped_piano_rolls[2],
+            'arrangement': arrangement,
+            'leadsheet': leadsheet,
+            'chord': cropped_chord_only_piano_rolls,
+            'polydis_chord': cropped_polydis_chord_prmat,
             'prmat': prmat,
             'fname': self.data_path[index]
         }
