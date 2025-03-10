@@ -137,14 +137,16 @@ class POP909_DataModule(Pop1k7_DataModule):
                 num_workers: int,
                 pr_res: int, 
                 transpose: bool,
+                bridge_in_arrangement: bool,
                 ):
         super().__init__(data_dir, train_seq_len, valid_seq_len, batch_size, hop_size, num_workers, pr_res, transpose)
+        self.bridge_in_arrangement = bridge_in_arrangement
     
     def setup(self, stage=None):
         self.train = POP909(path=self.data_dir, groups=['train'], sequence_length=self.train_seq_len,
-                                random_sample=True, transform=False, pr_res=self.pr_res, transpose=self.transpose)
+                                random_sample=True, transform=False, pr_res=self.pr_res, transpose=self.transpose, bridge_in_arrangement=self.bridge_in_arrangement)
         self.val = POP909(path=self.data_dir, groups=['valid'], sequence_length=self.valid_seq_len,
-                                random_sample=False, transform=False, pr_res=self.pr_res, transpose=False)
+                                random_sample=False, transform=False, pr_res=self.pr_res, transpose=False, bridge_in_arrangement=self.bridge_in_arrangement)
         self.test= POP909(path=self.data_dir, groups=['valid'], sequence_length=None,
-                                random_sample=False, transform=False, pr_res=self.pr_res, transpose=False)
+                                random_sample=False, transform=False, pr_res=self.pr_res, transpose=False, bridge_in_arrangement=self.bridge_in_arrangement)
     
