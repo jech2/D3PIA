@@ -1,5 +1,5 @@
 seed_everything: 23
-# ckpt_path : checkpoints/2024-12-31T01-41-17/step=0000050-metric_note_with_offsets_f1=0.0034.ckpt
+# ckpt_path : checkpoints/2025-03-04T17-23-04/last.ckpt
 wandb: True
 debug: False
 
@@ -48,8 +48,7 @@ model:
   auxiliary_loss_weight: 5.0e-4
   adaptive_auxiliary_loss: true
   mask_weight: [1, 1]
-  onset_suppress_sample: False # deprecated
-  temperature: 1.0
+  onset_suppress_sample: False
   onset_weight_kl: False
   no_mask: False
   sample_from_fully_masked: True
@@ -59,9 +58,7 @@ model:
   use_style_enc: False # check the decoder parameter use_style_enc is same as this
   style_enc_ckpt: pretrained/polydis/model_master_final.pt
   ref_arr_style_path: null
-  use_chord_enc: False
-  chord_enc_ckpt: pretrained/chd8bar/weights_best.pt
- 
+
   encoder:
     class_path: transcription.decoder.LSTM_NATTEN
     init_args:
@@ -69,15 +66,14 @@ model:
       timestep_type: null
       diffusion_step: 100
       natten_direction: 2d
-      dilation: [1,2,4,8,16,1,2,4,8,16]
+      dilation: [1,2,4,1,2,4,1,2,4,1]
       spatial_size: [128,88]
-      window: [5,5,5,5,5,5,5,5,5,5]
+      window: [15,15,15,15,15,15,15,15,15,15,15,15]
       n_unit: 96
       n_layers: 10
       cross_condition: self
       type: encoder
       use_style_enc: False # we only use style encoder in decoder
-      use_chord_enc: False # we only use chord encoder in decoder
 
   decoder:  
     class_path: transcription.decoder.TransModel
@@ -85,8 +81,8 @@ model:
       label_embed_dim: 4
       lstm_dim: 96
       n_layers: 10
-      window: [5,5,5,5,5,5,5,5,5,5]
-      dilation: [1,2,4,8,16,1,2,4,8,16]
+      window: [15,15,15,15,15,15,15,15,15,15,15,15]
+      dilation: [1,2,4,1,2,4,1,2,4,1]
       condition_method: self
       diffusion_step: 100
       timestep_type: adalayernorm
@@ -94,19 +90,18 @@ model:
       spatial_size: [128,88]
       num_state: 4
       num_class: 3
-      classifier_free_guidance: False
+      classifier_free_guidance: True
       cfg_config:
         cond_scale: 2
         cond_drop_prob: 0.1
         cfg_mode: "null"
       features_embed_dim: 96
       use_style_enc: False
-      use_chord_enc: False
 
   optimizer:
     class_path: torch.optim.AdamW
     init_args:
-      lr: 1.0e-3
+      lr: 2.5e-4
       weight_decay: 4.5e-2
       betas: [0.9, 0.96]
 
@@ -123,7 +118,7 @@ model:
 
 data:
   data_dir: './data/POP909-Dataset/POP909_processed_polyffusion_split_whole_song_gen_version'
-  batch_size: 8 
+  batch_size: 16
   num_workers: 12
   # train: True
   # validation: True
@@ -137,6 +132,5 @@ data:
   hop_size: 512
   transpose: true
   pr_res: 16
-  bridge_in_arrangement: true
-  no_chord_in_lead: false # should be true when chord embedding is used
+  bridge_in_arrangement: False
   

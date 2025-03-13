@@ -18,6 +18,7 @@ class TransModel(nn.Module):
                 natten_direction: str,
                 spatial_size: List[int],
                 use_style_enc: bool,
+                use_chord_enc: bool,
                 num_state: int = 5,
                 classifier_free_guidance: bool = False,
                 cfg_config: dict = None,
@@ -41,6 +42,7 @@ class TransModel(nn.Module):
         self.classifier_free_guidance = classifier_free_guidance
         self.num_class = num_class
         self.use_style_enc = use_style_enc
+        self.use_chord_enc = use_chord_enc
 
         # self.trans_model = NATTEN(config.hidden_per_pitch)
         self.trans_model = LSTM_NATTEN((label_embed_dim+features_embed_dim), 
@@ -54,6 +56,7 @@ class TransModel(nn.Module):
                                         n_layers=self.n_layers,
                                         cross_condition=self.cross_condition,
                                         use_style_enc=self.use_style_enc,
+                                        use_chord_enc=self.use_chord_enc,
                                         )
         self.output = nn.Linear(self.n_unit, self.num_class) 
         self.label_emb = nn.Embedding(num_state + 1, # +1 is for mask
@@ -75,7 +78,7 @@ class TransModel(nn.Module):
             self.use_cfg = False
         
 
-    def forward(self, label, feature, t, style_emb=None, cond_drop_prob=None, cfg_feature=None):
+    def forward(self, label, feature, t, style_emb=None, chord_emb=None, cond_drop_prob=None, cfg_feature=None):
         # feature (=cond_emb) : B x T*88 x H
         # label (=x_t) : B x T*88 x 1
         # feature are concatanated with label as input to model
@@ -104,9 +107,9 @@ class TransModel(nn.Module):
         label_emb = self.label_emb(label) # B x T*88 x label_embed_dim
         input_feature = th.cat((label_emb, feature), dim=-1) 
         if self.cross_condition == 'self':
-            x = self.trans_model(input_feature, None, t, style_emb=style_emb)
+            x = self.trans_model(input_feature, None, t, style_emb=style_emb, chord_emb=chord_emb)
         elif self.cross_condition == 'cross' or self.cross_condition == 'self_cross':
-            x = self.trans_model(input_feature, feature, t, style_emb=style_emb)
+            x = self.trans_model(input_feature, feature, t, style_emb=style_emb, chord_emb=chord_emb)
         out = self.output(x)
         return out.reshape(x.shape[0], x.shape[1]*x.shape[2], -1).permute(0, 2, 1) # B x 5 x T*88
 
@@ -136,6 +139,7 @@ class LSTM_NATTEN(nn.Module):
                  spatial_size,
                  dilation: List[int],
                  use_style_enc: bool,
+                 use_chord_enc: bool,
                  window=25,
                  n_unit=24,
                  n_head=4,
@@ -156,6 +160,7 @@ class LSTM_NATTEN(nn.Module):
         self.dilation = dilation
         self.module_type = type
         self.use_style_enc = use_style_enc
+        self.use_chord_enc = use_chord_enc
         
         if self.natten_dir == '2d' and cross_condition == 'self':
             self.na = []
@@ -164,13 +169,14 @@ class LSTM_NATTEN(nn.Module):
                                                                     diffusion_step=self.diffusion_step,
                                                                     dilation=self.dilation[i],
                                                                     timestep_type=self.timestep_type, 
-                                                                    use_style_enc=self.use_style_enc))
+                                                                    use_style_enc=self.use_style_enc,
+                                                                    use_chord_enc=self.use_chord_enc))
             self.na = nn.ModuleList(self.na)
         else:
             raise NotImplementedError(f"natten_dir: {self.natten_dir}, cross_condition: {self.cross_condition}")
 
 
-    def forward(self, x, cond=None, t=None, style_emb=None, label_emb=None):
+    def forward(self, x, cond=None, t=None, style_emb=None, chord_emb=None, label_emb=None):
         """
         x shape : B x T*88 x n_unit
         cond shape : B x T*88 x feature_embed_dim(=128)
@@ -193,7 +199,7 @@ class LSTM_NATTEN(nn.Module):
         x = x.reshape(B, 88, T, -1).permute(0,2,1,3) # B x T x 88 x H
         for layers in self.na:
             x_res = x
-            x, _, t = layers(x, cond, t, style_emb)
+            x, _, t = layers(x, cond, t, style_emb, chord_emb)
             x = x + x_res
 
         return x

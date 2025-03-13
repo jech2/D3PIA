@@ -55,6 +55,9 @@ class AdaLayerNorm(nn.Module):
         if emb_type == 'style':
             self.emb = None
             self.layernorm = nn.LayerNorm(o_dim // 2, elementwise_affine=False)
+        elif emb_type == 'chord':
+            self.emb = None
+            self.layernorm = nn.LayerNorm(o_dim // 2, elementwise_affine=False)
         else:
             if "abs" in emb_type:
                 self.emb = SinusoidalPosEmb(diffusion_step, i_dim)
@@ -67,10 +70,13 @@ class AdaLayerNorm(nn.Module):
         self.silu = nn.SiLU()
         self.linear = nn.Linear(i_dim, o_dim)
 
-    def forward(self, x, timestep=None, style_emb=None): # TODO : check if valid
+    def forward(self, x, timestep=None, style_emb=None, chord_emb=None): # TODO : check if valid
         if self.emb_type == 'style':
             assert style_emb != None and timestep == None
             emb = self.linear(self.silu(style_emb)).unsqueeze(1)
+        elif self.emb_type == 'chord':
+            assert chord_emb != None and timestep == None
+            emb = self.linear(self.silu(chord_emb)).unsqueeze(1)
         else:
             assert timestep != None and style_emb == None
             emb = self.linear(self.silu(self.emb(timestep))).unsqueeze(1)
@@ -97,6 +103,7 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         diffusion_step: int = 100,
         timestep_type: str = "adalayernorm_abs",
         use_style_enc: bool = False,
+        use_chord_enc: bool = False
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -104,6 +111,7 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         self.scale = qk_scale or self.head_dim**-0.5
         self.timestep_type = timestep_type
         self.use_style_enc = use_style_enc
+        self.use_chord_enc = use_chord_enc
         assert (
             kernel_size > 1 and kernel_size % 2 == 1
         ), f"Kernel size must be an odd number greater than 1, got {kernel_size}."
@@ -118,6 +126,8 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
             if self.use_style_enc:
                 self.ln_style = AdaLayerNorm(i_dim=1024, diffusion_step=None, o_dim=2*dim, emb_type='style')
 
+            if self.use_chord_enc:
+                self.ln_chord = AdaLayerNorm(i_dim=2048, diffusion_step=None, o_dim=2*dim, emb_type='chord')
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         if bias:
@@ -131,7 +141,7 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x: Tensor, cond:Tensor, t:Tensor, style_emb:Tensor = None) -> Tensor:
+    def forward(self, x: Tensor, cond:Tensor, t:Tensor, style_emb:Tensor = None, chord_emb: Tensor=None) -> Tensor:
         if x.dim() != 4:
             raise ValueError(
                 f"NeighborhoodAttention2D expected a rank-4 input tensor; got {x.dim()=}."
@@ -175,6 +185,8 @@ class NeighborhoodAttention2D_diffusion(nn.Module):
             x = x.reshape(B, H*W, C)
             if style_emb != None and self.use_style_enc:
                 x = self.ln_style(x, style_emb=style_emb)
+            if chord_emb != None and self.use_chord_enc:
+                x = self.ln_chord(x, chord_emb=chord_emb)
             x = x.reshape(B, H, W, C)
 
         return self.proj_drop(self.proj(x)), None, t

@@ -37,6 +37,8 @@ class D3RM(DiscreteDiffusion):
                 decoder: nn.Module,
                 use_style_enc: bool,
                 style_enc_ckpt: str,
+                use_chord_enc: bool,
+                chord_enc_ckpt: str,
                 ref_arr_style_path: str | None,
                 encoder_parameters: str,
                 pretrained_encoder_path: str,
@@ -69,7 +71,7 @@ class D3RM(DiscreteDiffusion):
             assert style_enc_ckpt is not None and Path(style_enc_ckpt).exists()
             assert self.encoder.use_style_enc == False and self.decoder.use_style_enc == True
             
-            from transcription.style_encoder import load_pretrained_style_enc
+            from transcription.external_encoder import load_pretrained_style_enc
             self.style_enc = load_pretrained_style_enc(
                     style_enc_ckpt,
                     256, # txt_emb_size
@@ -91,6 +93,34 @@ class D3RM(DiscreteDiffusion):
             # number of param
             total_params = sum(p.numel() for p in self.style_enc.parameters())
             print(total_params)
+        
+        if use_chord_enc:
+            assert chord_enc_ckpt is not None and Path(chord_enc_ckpt).exists()
+            assert self.encoder.use_chord_enc == False and self.decoder.use_chord_enc == True
+            
+            from transcription.external_encoder import load_pretrained_chd_enc
+            self.chord_enc = load_pretrained_chd_enc(
+                    chord_enc_ckpt,
+                    36, # chd_input_dim
+                    512, # chd_z_input_dim
+                    512, # chd_hidden_dim
+                    512, # chd_z_dim
+                    32, # chd_n_step
+                )
+            
+            print(colored('Finished loading chord_enc', 'blue', attrs=['bold']))
+        else:
+            assert self.encoder.use_chord_enc == False and self.decoder.use_chord_enc == False
+            self.chord_enc = None
+            print(colored('No chord encoder', 'blue', attrs=['bold']))
+            
+        if self.chord_enc is not None:
+            for param in self.chord_enc.parameters():
+                param.requires_grad = False
+                
+            # number of param
+            total_params = sum(p.numel() for p in self.chord_enc.parameters())
+            print(total_params)
 
         self.step = 0
         self.validation_step_outputs = defaultdict(list)
@@ -101,11 +131,32 @@ class D3RM(DiscreteDiffusion):
             for prmat_seg in prmat.split(32, 1):  # (#B, 32, 128) * 4
                 z_seg = self.style_enc(prmat_seg).mean
                 z_list.append(z_seg)
-            z = torch.cat(z_list, dim=-1)
+            z = torch.cat(z_list, dim=-1) # (Bx (4 * 256))
             return z
         else:
             # print(f"unencoded txt: {prmat.shape}")
             return None
+
+
+    def _encode_chord(self, chord):
+        if self.chord_enc is not None:
+            z_list = []
+            for chord_seg in chord.split(8, 1):  # (#B, 8, 36) * 4
+                z_seg = self.chord_enc(chord_seg).mean
+                z_list.append(z_seg)
+            # z = torch.stack(z_list, dim=1)
+            z = torch.cat(z_list, dim=-1) # (Bx (4 * 512))
+            # z = z.squeeze(1)  # (#B, 4, 512) 
+
+            # z = self.chord_enc(chord).mean
+            # z = z.unsqueeze(1)  # (#B, 1, 512)
+            return z
+        else:
+            return None
+            # chord_flatten = torch.reshape(
+            #     chord, (-1, 1, chord.shape[1] * chord.shape[2])
+            # )
+            # return chord_flatten
 
     # def on_load_checkpoint(self, checkpoint):
     #     # Custom handling for checkpoint loading
@@ -115,15 +166,17 @@ class D3RM(DiscreteDiffusion):
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
         chord = batch['chord'].to(self.device).to(torch.float32) # B x T x 88
+        polydis_chord = batch['polydis_chord'].to(self.device).to(torch.float32) # B x T x 88
 
         prmat = batch['prmat'].to(self.device).to(torch.float32)
         
         style_emb = self._encode_style(prmat)
+        chord_emb = self._encode_chord(polydis_chord)
 
         # forward
         arrangement = arrangement.reshape(arrangement.shape[0], -1)
 
-        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, return_loss=True, cfg_features=chord)
+        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, chord_emb, return_loss=True, cfg_features=chord)
         self.log('train/diffusion_loss', disc_diffusion_loss['loss'].mean(), prog_bar=True, logger=True, on_step=True, on_epoch=False)
         self.log('lr', self.trainer.optimizers[0].param_groups[0]['lr'])
 
@@ -134,15 +187,17 @@ class D3RM(DiscreteDiffusion):
         arrangement = batch['arrangement'].to(self.device).to(torch.int64) # B x T x 88
         leadsheet = batch['leadsheet'].to(self.device).to(torch.float32) # B x T x 88
         chord = batch['chord'].to(self.device).to(torch.float32) # B x T x 88
+        polydis_chord = batch['polydis_chord'].to(self.device).to(torch.float32) # B x T x 88
 
         prmat = batch['prmat'].to(self.device).to(torch.float32)
         style_emb = self._encode_style(prmat)
+        chord_emb = self._encode_chord(polydis_chord)
 
         shape = arrangement.shape
         # Forward step (for loss calculation)    
         arrangement = arrangement.reshape(arrangement.shape[0], -1)
-        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, return_loss=True, cfg_features=chord)
-        frame_out, _ = self.sample_func(leadsheet, prev_piano=None, style_emb=style_emb) # frame out: B x T x 88 x C
+        disc_diffusion_loss = self(arrangement, leadsheet, style_emb, chord_emb, return_loss=True, cfg_features=chord)
+        frame_out, _ = self.sample_func(leadsheet, prev_piano=None, style_emb=style_emb, chord_emb=chord_emb) # frame out: B x T x 88 x C
         accuracy = (frame_out == arrangement).float()
         validation_metric = defaultdict(list)
         for n in range(leadsheet.shape[0]):
@@ -187,7 +242,6 @@ class D3RM(DiscreteDiffusion):
             prmat = torch.tensor(prmat).to(self.device).to(torch.float32)
         else:
             prmat = batch['prmat'].to(self.device).to(torch.float32)
-
         B, total_frame, _ = leadsheet.shape
         test_metric = defaultdict(list)
 
@@ -230,17 +284,20 @@ class D3RM(DiscreteDiffusion):
                     chord_pad = F.pad(chord_pad, (0, 0, 0, n_pad, 0, 0), mode='constant', value=0)
             
             style_emb = self._encode_style(prmat_pad)
+            
+            polydis_chord = batch['polydis_chord'].to(self.device).to(torch.float32)
+            chord_emb = self._encode_chord(polydis_chord)
 
             # print(start, end, seg_len, seg, hop_size, leadsheet_pad.shape)
             # print(leadsheet_pad.shape)
             if self.inpainting_ratio == 0:
-                frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_pad=chord_pad)
+                frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_emb=chord_emb, chord_pad=chord_pad)
             else:
                 if seg == 0:
-                    frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_pad=chord_pad)
+                    frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_emb=chord_emb, chord_pad=chord_pad)
                     prev_piano = frame_out.reshape(frame_out.shape[0], -1, 88)
                 else:   
-                    frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, style_emb=style_emb, visualize_denoising=True, chord_pad=chord_pad)
+                    frame_out, labels = self.sample_func(leadsheet_pad, prev_piano, style_emb=style_emb, chord_emb=chord_emb, visualize_denoising=True, chord_pad=chord_pad)
                     # Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
                     # for idx in range(len(frame_out)):
                     #     print(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
@@ -309,14 +366,14 @@ class D3RM(DiscreteDiffusion):
             }
             np.savez(out_fp, **output)
             
-    def sample_func(self, leadsheet, prev_piano, style_emb=None, visualize_denoising=False, chord_pad=None):
+    def sample_func(self, leadsheet, prev_piano, style_emb=None, chord_emb=None, visualize_denoising=False, chord_pad=None):
         tic = time.time()
         if self.inpainting_ratio == 0 or prev_piano is None:
-            samples, labels = self.sample(leadsheet, style_emb,
+            samples, labels = self.sample(leadsheet, style_emb, chord_emb,
                                         visualize_denoising=visualize_denoising, chord=chord_pad)
         else:
             with torch.no_grad():
-                samples, labels = self.sample_inpainting(leadsheet, style_emb, prev_piano, 
+                samples, labels = self.sample_inpainting(leadsheet, style_emb, chord_emb, prev_piano, 
                                             inpainting_ratio=self.inpainting_ratio,
                                             visualize_denoising=visualize_denoising,
                                             shape=leadsheet.shape, chord=chord_pad)
@@ -334,7 +391,7 @@ class D3RM(DiscreteDiffusion):
                     "frequency": 1,
                     }}
         
-    def predict_start(self, log_x_t, cond_audio, style_emb, t, sampling=False, cond_chord_for_cfg=None):
+    def predict_start(self, log_x_t, cond_audio, style_emb, chord_emb, t, sampling=False, cond_chord_for_cfg=None):
         # p(x0|xt)
         x_t = log_onehot_to_index(log_x_t)
         
@@ -346,7 +403,7 @@ class D3RM(DiscreteDiffusion):
                 feature = self.encoder(cond_audio)
                 feature_for_cfg = self.encoder(cond_chord_for_cfg) if cond_chord_for_cfg is not None else None
                 
-            out = self.decoder(x_t, feature, t, style_emb, cfg_feature=feature_for_cfg)
+            out = self.decoder(x_t, feature, t, style_emb, chord_emb, cfg_feature=feature_for_cfg)
         if sampling==True:
             if t[0].item() == self.num_timesteps-1:
                 if isinstance(self.encoder, LSTM_NATTEN):
@@ -356,16 +413,16 @@ class D3RM(DiscreteDiffusion):
                     feature = self.encoder(cond_audio)
                     feature_for_cfg = self.encoder(cond_chord_for_cfg) if cond_chord_for_cfg is not None else None
         
-                out = self.decoder(x_t, feature, t, style_emb, cfg_feature=feature_for_cfg)
+                out = self.decoder(x_t, feature, t, style_emb, chord_emb, cfg_feature=feature_for_cfg)
                 self.saved_encoder_features = feature
                 self.saved_encoder_features_for_cfg = feature_for_cfg
             else:
                 assert self.saved_encoder_features is not None
-                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, cfg_feature=self.saved_encoder_features_for_cfg)
+                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, chord_emb, cfg_feature=self.saved_encoder_features_for_cfg)
             
             if hasattr(self.decoder, 'cond_scale'):
                 cond_scale = self.decoder.cond_scale
-                null_out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, cond_drop_prob=1., cfg_feature=self.saved_encoder_features_for_cfg)
+                null_out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, chord_emb, cond_drop_prob=1., cfg_feature=self.saved_encoder_features_for_cfg)
                 out = out * cond_scale + null_out * (1-cond_scale)
                     
             # if t[0].item() == 0: self.saved_encoder_features = None

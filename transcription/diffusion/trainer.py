@@ -276,19 +276,19 @@ class DiscreteDiffusion(pl.LightningModule):
 
         return log_probs
 
-    def predict_start(self, log_x_t, cond_audio, style_emb, t, sampling=False):          # p(x0|xt)
+    def predict_start(self, log_x_t, cond_audio, style_emb, chord_emb, t, sampling=False):          # p(x0|xt)
         x_t = log_onehot_to_index(log_x_t)
         if sampling==False:
             feature = self.encoder(cond_audio)
-            out = self.decoder(x_t, feature, t, style_emb)
+            out = self.decoder(x_t, feature, t, style_emb, chord_emb)
         if sampling==True:
             if t[0].item() == self.num_timesteps-1:
                 feature = self.encoder(cond_audio)
-                out = self.decoder(x_t, feature, t, style_emb)
+                out = self.decoder(x_t, feature, t, style_emb, chord_emb)
                 self.saved_encoder_features = feature
             else:
                 assert self.saved_encoder_features is not None
-                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb)
+                out = self.decoder(x_t, self.saved_encoder_features, t, style_emb, chord_emb)
             if t[0].item() == 0: self.saved_encoder_features = None
 
         assert out.size(0) == x_t.size(0)
@@ -372,10 +372,10 @@ class DiscreteDiffusion(pl.LightningModule):
         return torch.clamp(log_EV_xtmin_given_xt_given_xstart, -70, 0)
 
 
-    def p_pred(self, log_x, cond_audio, t, style_emb=None, target=None, mask=None, repaint=1, chord=None):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
+    def p_pred(self, log_x, cond_audio, t, style_emb=None, chord_emb=None, target=None, mask=None, repaint=1, chord=None):             # if x0, first p(x0|xt), than sum(q(xt-1|xt,x0)*p(x0|xt))
         # p_pred for sampling
         if self.parametrization == 'x0':
-            log_x_recon = self.predict_start(log_x, cond_audio, style_emb, t, sampling=True, cond_chord_for_cfg=chord)
+            log_x_recon = self.predict_start(log_x, cond_audio, style_emb, chord_emb, t, sampling=True, cond_chord_for_cfg=chord)
             if target is not None and mask is not None:
                 log_x_recon = log_x_recon * (1 - mask) + target * mask
             if self.reverse_sampling:
@@ -404,8 +404,8 @@ class DiscreteDiffusion(pl.LightningModule):
     
 
     @torch.no_grad()
-    def p_sample(self, log_x, cond_audio, t, style_emb=None, cond_drop_prob=None, chord=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
-        model_log_prob = self.p_pred(log_x, cond_audio, t, style_emb, chord=chord) # onset, reonset -> 2, 4 (0~4)
+    def p_sample(self, log_x, cond_audio, t, style_emb=None, chord_emb=None, cond_drop_prob=None, chord=None):               # sample q(xt-1) for next step from xt, actually is p(xt-1|xt)
+        model_log_prob = self.p_pred(log_x, cond_audio, t, style_emb, chord_emb, chord=chord) # onset, reonset -> 2, 4 (0~4)
         if self.onset_suppress: # suppress onset, offsets when sampling
             model_log_prob[:, 1, :] = model_log_prob[:, 1, :] * (1 + self.onset_suppress)
             model_log_prob[:, 2, :] = model_log_prob[:, 2, :] * (1 + self.onset_suppress)
@@ -476,7 +476,7 @@ class DiscreteDiffusion(pl.LightningModule):
         else:
             raise ValueError
 
-    def _train_loss(self, x, cond_audio, style_emb=None, is_train=True, cfg_features=None):                       # get the KL loss
+    def _train_loss(self, x, cond_audio, style_emb=None, chord_emb=None, is_train=True, cfg_features=None):                       # get the KL loss
         b, device = x.size(0), x.device
 
         assert self.loss_type == 'vb_stochastic'
@@ -490,7 +490,7 @@ class DiscreteDiffusion(pl.LightningModule):
         xt = log_onehot_to_index(log_xt)
 
         ############### go to p_theta function ###############
-        log_x0_recon = self.predict_start(log_xt, cond_audio, style_emb=style_emb, t=t, cond_chord_for_cfg=cfg_features)            # P_theta(x0|xt)
+        log_x0_recon = self.predict_start(log_xt, cond_audio, style_emb=style_emb, chord_emb=chord_emb, t=t, cond_chord_for_cfg=cfg_features)            # P_theta(x0|xt)
         log_model_prob = self.q_posterior(log_x_start=log_x0_recon, log_x_t=log_xt, t=t)      # go through q(xt_1|xt,x0)
 
         ################## compute acc list ################
@@ -551,6 +551,7 @@ class DiscreteDiffusion(pl.LightningModule):
             label,
             features, 
             style_emb=None,
+            chord_emb=None,
             return_loss=False, 
             return_logits=True, 
             return_att_weight=False,
@@ -563,7 +564,7 @@ class DiscreteDiffusion(pl.LightningModule):
         # now we get cond_emb and sample_image
         ######## Diffusion Training ########
         if is_train == True:
-            log_model_prob, loss = self._train_loss(label, features, style_emb, cfg_features=cfg_features)
+            log_model_prob, loss = self._train_loss(label, features, style_emb, chord_emb, cfg_features=cfg_features)
             loss = loss.sum()/(label.size()[0] * label.size()[1]) # TODO: check if input.size()[0] and [1] is right
 
         # 4) get output, especially loss
@@ -580,6 +581,7 @@ class DiscreteDiffusion(pl.LightningModule):
             self,
             audio,
             style_emb=None,
+            chord_emb=None,
             return_logits = False,
             visualize_denoising = False,
             chord=None):
@@ -609,7 +611,7 @@ class DiscreteDiffusion(pl.LightningModule):
             with torch.no_grad():
                 for diffusion_index in range(start_step-1, -1, -1):
                     t = torch.full((batch_size,), diffusion_index, device=device, dtype=torch.long) # make batch tensor filled with value 't'
-                    log_z = self.p_sample(log_z, cond_audio, t, style_emb, chord=chord)     # log_z is log_onehot
+                    log_z = self.p_sample(log_z, cond_audio, t, style_emb, chord_emb, chord=chord)     # log_z is log_onehot
                     if visualize_denoising:
                         labels.append(log_z.argmax(1).cpu().numpy())
 

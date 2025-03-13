@@ -786,9 +786,10 @@ class Pop1k7(Dataset):
 
 class POP909(Pop1k7):
     def __init__(self, path='data/POP909-Dataset', groups=None, sequence_length=313, seed=1, 
-                 random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False, chord_style='pop909', bridge_in_arrangement=False):
+                 random_sample=True, transform=None, load_mode='lazy', pr_res=32, transpose=False, chord_style='pop909', bridge_in_arrangement=False, no_chord_in_lead=False):
         super().__init__(path, groups, sequence_length, seed, random_sample, transform, load_mode, pr_res, transpose, chord_style) 
         self.bridge_in_arrangement = bridge_in_arrangement 
+        self.no_chord_in_lead = no_chord_in_lead
 
     @classmethod
     def available_groups(cls):
@@ -963,8 +964,12 @@ class POP909(Pop1k7):
 
 
         cropped_chord_only_piano_rolls = cropped_chord_only_piano_rolls.squeeze()
-        
-        leadsheet = th.maximum(cropped_piano_rolls[0], cropped_chord_only_piano_rolls)
+
+        if not self.no_chord_in_lead:        
+            leadsheet = th.maximum(cropped_piano_rolls[0], cropped_chord_only_piano_rolls)
+        else:
+            leadsheet = cropped_piano_rolls[0]
+            
         arrangement = th.maximum(cropped_piano_rolls[0], cropped_piano_rolls[2])
         if self.bridge_in_arrangement:
             arrangement = th.maximum(arrangement, cropped_piano_rolls[1])

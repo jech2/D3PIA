@@ -59,7 +59,7 @@ model:
   use_style_enc: False # check the decoder parameter use_style_enc is same as this
   style_enc_ckpt: pretrained/polydis/model_master_final.pt
   ref_arr_style_path: null
-  use_chord_enc: False
+  use_chord_enc: True
   chord_enc_ckpt: pretrained/chd8bar/weights_best.pt
  
   encoder:
@@ -94,14 +94,14 @@ model:
       spatial_size: [128,88]
       num_state: 4
       num_class: 3
-      classifier_free_guidance: False
+      classifier_free_guidance: True
       cfg_config:
         cond_scale: 2
         cond_drop_prob: 0.1
         cfg_mode: "null"
       features_embed_dim: 96
       use_style_enc: False
-      use_chord_enc: False
+      use_chord_enc: True
 
   optimizer:
     class_path: torch.optim.AdamW
@@ -138,5 +138,5 @@ data:
   transpose: true
   pr_res: 16
   bridge_in_arrangement: true
-  no_chord_in_lead: false # should be true when chord embedding is used
+  no_chord_in_lead: true # should be true when chord embedding is used
   
