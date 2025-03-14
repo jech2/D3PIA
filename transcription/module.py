@@ -242,6 +242,10 @@ class D3RM(DiscreteDiffusion):
             prmat = torch.tensor(prmat).to(self.device).to(torch.float32)
         else:
             prmat = batch['prmat'].to(self.device).to(torch.float32)
+
+        polydis_chord = batch['polydis_chord'].to(self.device).to(torch.float32)
+
+
         B, total_frame, _ = leadsheet.shape
         test_metric = defaultdict(list)
 
@@ -275,6 +279,9 @@ class D3RM(DiscreteDiffusion):
             else:
                 prmat_pad = prmat[:, int(start):int(end)].to(self.device)
                 
+            from midisym.constants import QUANTIZE_RESOLUTION 
+            polydis_chord_pad = polydis_chord[:, int(start)//QUANTIZE_RESOLUTION:int(end)//QUANTIZE_RESOLUTION].to(self.device)
+                
             if seg_len > leadsheet_pad.shape[1]:
                 n_pad = seg_len - leadsheet_pad.shape[1]
                 leadsheet_pad = F.pad(leadsheet_pad, (0, 0, 0, n_pad, 0, 0), mode='constant', value=0)
@@ -282,12 +289,13 @@ class D3RM(DiscreteDiffusion):
 
                 if chord_pad is not None:
                     chord_pad = F.pad(chord_pad, (0, 0, 0, n_pad, 0, 0), mode='constant', value=0)
-            
+                    
+                n_pad_polydis = seg_len // QUANTIZE_RESOLUTION - polydis_chord_pad.shape[1]
+                polydis_chord_pad = F.pad(polydis_chord_pad, (0, 0, 0, n_pad_polydis, 0, 0), mode='constant', value=0)
+                
             style_emb = self._encode_style(prmat_pad)
             
-            polydis_chord = batch['polydis_chord'].to(self.device).to(torch.float32)
-            chord_emb = self._encode_chord(polydis_chord)
-
+            chord_emb = self._encode_chord(polydis_chord_pad)
             # print(start, end, seg_len, seg, hop_size, leadsheet_pad.shape)
             # print(leadsheet_pad.shape)
             if self.inpainting_ratio == 0:

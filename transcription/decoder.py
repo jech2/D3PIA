@@ -16,6 +16,7 @@ class TransModel(nn.Module):
                 diffusion_step: int,
                 timestep_type: str,
                 natten_direction: str,
+                attention_type: str,
                 spatial_size: List[int],
                 use_style_enc: bool,
                 use_chord_enc: bool,
@@ -43,6 +44,7 @@ class TransModel(nn.Module):
         self.num_class = num_class
         self.use_style_enc = use_style_enc
         self.use_chord_enc = use_chord_enc
+        self.attention_type = attention_type
 
         # self.trans_model = NATTEN(config.hidden_per_pitch)
         self.trans_model = LSTM_NATTEN((label_embed_dim+features_embed_dim), 
@@ -57,6 +59,7 @@ class TransModel(nn.Module):
                                         cross_condition=self.cross_condition,
                                         use_style_enc=self.use_style_enc,
                                         use_chord_enc=self.use_chord_enc,
+                                        attention_type=self.attention_type
                                         )
         self.output = nn.Linear(self.n_unit, self.num_class) 
         self.label_emb = nn.Embedding(num_state + 1, # +1 is for mask
@@ -137,6 +140,7 @@ class LSTM_NATTEN(nn.Module):
                  diffusion_step,
                  natten_direction,
                  spatial_size,
+                 attention_type,
                  dilation: List[int],
                  use_style_enc: bool,
                  use_chord_enc: bool,
@@ -161,16 +165,27 @@ class LSTM_NATTEN(nn.Module):
         self.module_type = type
         self.use_style_enc = use_style_enc
         self.use_chord_enc = use_chord_enc
+        self.attention_type = attention_type
         
         if self.natten_dir == '2d' and cross_condition == 'self':
             self.na = []
             for i in range(n_layers):
-                self.na.append(NeighborhoodAttention2D_diffusion(n_unit, 4, window[i],
-                                                                    diffusion_step=self.diffusion_step,
-                                                                    dilation=self.dilation[i],
-                                                                    timestep_type=self.timestep_type, 
-                                                                    use_style_enc=self.use_style_enc,
-                                                                    use_chord_enc=self.use_chord_enc))
+                if self.attention_type == 'NAT':
+                    self.na.append(NeighborhoodAttention2D_diffusion(n_unit, 4, window[i],
+                                                                        diffusion_step=self.diffusion_step,
+                                                                        dilation=self.dilation[i],
+                                                                        timestep_type=self.timestep_type, 
+                                                                        use_style_enc=self.use_style_enc,
+                                                                        use_chord_enc=self.use_chord_enc))
+                elif self.attention_type == 'SAT':
+                    from transcription.diffusion.self_attention_diffusion import SelfAttention2D_diffusion
+                    self.na.append(SelfAttention2D_diffusion(n_unit, 4, window[i],
+                                                             diffusion_step=self.diffusion_step,
+                                                             timestep_type=self.timestep_type, 
+                                                             use_style_enc=self.use_style_enc,
+                                                             use_chord_enc=self.use_chord_enc))
+                else:
+                    raise NotImplementedError(f"Attention type: {self.attention_type}")
             self.na = nn.ModuleList(self.na)
         else:
             raise NotImplementedError(f"natten_dir: {self.natten_dir}, cross_condition: {self.cross_condition}")
