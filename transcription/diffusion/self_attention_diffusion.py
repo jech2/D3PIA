@@ -65,7 +65,7 @@ class SelfAttention2D_diffusion(nn.Module):
 
         # Compute attention scores
         attn = (q @ k.transpose(-2, -1)) * self.scale  # (B, num_heads, H*W, H*W)
-        attn = attn.softmax(dim=-1)
+        attn = attn.softmax(dim=-1) 
         attn = self.attn_drop(attn)
 
         # Compute attention output

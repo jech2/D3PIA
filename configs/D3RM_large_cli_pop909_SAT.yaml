@@ -79,7 +79,7 @@ model:
       type: encoder
       use_style_enc: False # we only use style encoder in decoder
       use_chord_enc: False # we only use chord encoder in decoder
-      attention_type: "NAT" #NAT or SAT(self attention)
+      attention_type: "SAT" #NAT or SAT(self attention)
 
   decoder:  
     class_path: transcription.decoder.TransModel
@@ -127,7 +127,7 @@ model:
 
 data:
   data_dir: './data/POP909-Dataset/POP909_processed_polyffusion_split_whole_song_gen_version'
-  batch_size: 8 
+  batch_size: 1 
   num_workers: 12
   # train: True
   # validation: True

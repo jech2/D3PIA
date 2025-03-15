@@ -70,7 +70,7 @@ model:
       timestep_type: null
       diffusion_step: 100
       natten_direction: 2d
-      dilation: [1,2,4,8,16,1,2,4,8,16]
+      dilation: [1,1,1,1,1,1,1,1,1,1]
       spatial_size: [128,88]
       window: [5,5,5,5,5,5,5,5,5,5]
       n_unit: 96
@@ -88,7 +88,7 @@ model:
       lstm_dim: 96
       n_layers: 10
       window: [5,5,5,5,5,5,5,5,5,5]
-      dilation: [1,2,4,8,16,1,2,4,8,16]
+      dilation: [1,1,1,1,1,1,1,1,1,1]
       condition_method: self
       diffusion_step: 100
       timestep_type: adalayernorm
