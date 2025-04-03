@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>D3PIA: A Discrete Denoising Diffusion Model for Piano Accompaniment Generation</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f8fbf4;
+      font-family: 'Inter', sans-serif;
+      color: #333;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 32px;
+      color: #3e5e30;
+      margin-bottom: 16px;
+    }
+
+    p {
+      font-size: 16px;
+      color: #555;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    section {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(169, 209, 152, 0.2);
+      padding: 30px;
+      margin-top: 30px;
+    }
+
+    h2 {
+      color: #4a7c59;
+      font-size: 22px;
+      margin-bottom: 16px;
+    }
+
+    h3 {
+      font-size: 18px;
+      color: #3e5e30;
+      margin: 20px 0 8px;
+    }
+
+    select {
+      padding: 10px 16px;
+      font-size: 16px;
+      border: 2px solid #a9d198;
+      border-radius: 6px;
+      background-color: #fff;
+      cursor: pointer;
+      transition: border-color 0.3s;
+    }
+
+    select:hover {
+      border-color: #77ab59;
+    }
+
+    button {
+      background-color: #d8e8d0;
+      color: #3e5e30;
+      border: none;
+      padding: 10px 18px;
+      margin: 6px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.3s, transform 0.2s;
+    }
+
+    button:hover {
+      background-color: #a9d198;
+      transform: translateY(-1px);
+    }
+
+    button.active,
+    button.dataset-active,
+    button.nobridge-active {
+      background-color: #4a7c59;
+      color: white;
+    }
+
+    /* D3PIA와 leadsheet 버튼을 위한 특별한 스타일 */
+    button.ours {
+      background-color: #7fb1e3;
+      color: white;
+    }
+
+    button.ours:hover {
+      background-color: #4a90e2;
+    }
+
+    button.ours.active,
+    button.ours.dataset-active,
+    button.ours.nobridge-active {
+      background-color: #3b6b9d;
+    }
+
+    button.leadsheet {
+      background-color: #f8d4a5;
+      color: #8b5000;
+    }
+
+    button.leadsheet:hover {
+      background-color: #f0ad4e;
+      color: white;
+    }
+
+    button.leadsheet.active,
+    button.leadsheet.dataset-active,
+    button.leadsheet.nobridge-active {
+      background-color: #d58512;
+      color: white;
+    }
+
+    /* dataset-active와 nobridge-active 클래스에 대한 기본 스타일 */
+    button.dataset-active,
+    button.nobridge-active {
+      background-color: #8bc275;
+      color: white;
+    }
+
+    #midiVisualizer {
+      display: none;
+      width: 100%;
+      max-width: 800px;
+      height: 344px;
+      /* overflow: auto; */
+      margin: 30px auto 10px;
+      border: 2px solid #a9d198;
+      border-radius: 10px;
+      background-color: #fff;
+    }
+
+    #loadingMessage {
+      font-size: 18px;
+      color: #666;
+      margin: 20px 0;
+    }
+
+    midi-visualizer .piano-roll-visualizer {
+      border: none;
+      overflow: auto;
+      text-align: left;
+    }
+
+    midi-visualizer svg rect.note {
+      opacity: 0.9;
+    }
+
+    midi-visualizer svg rect.note[data-instrument="0"] {
+      fill: #a9d198;
+    }
+
+    midi-visualizer svg rect.note[data-instrument="1"] {
+      fill: #3e5e30;
+    }
+
+    midi-visualizer svg rect.note[data-is-drum="true"] {
+      fill: #77ab59;
+    }
+
+    midi-visualizer svg rect.note.active {
+      fill: #4a7c59;
+      /* stroke-width: 1px; */
+      opacity: 1;
+    }
+
+    midi-visualizer .piano-roll-visualizer svg {
+      background: linear-gradient(
+        90deg,
+        #ccc 1px,
+        transparent 1px 25px,
+        rgba(169, 209, 152, 0.7) 26px,
+        transparent 26px 50px,
+        rgba(169, 209, 152, 0.7) 51px,
+        transparent 51px 75px,
+        rgba(169, 209, 152, 0.7) 76px,
+        transparent 76px
+      ) left / 100px repeat;
+      margin: 0;
+      display: inline-block;
+    }
+
+    midi-player {
+      display: block;
+      margin: 10px auto 0;
+      width: 100%;
+      max-width: 800px;
+    }
+    
+    /* midi-player의 seek-bar 색상 변경 */
+    midi-player::part(seek-bar) {
+      accent-color: #4a7c59;  /* 진한 초록색으로 변경 */
+    }
+
+    /* Firefox를 위한 특별 스타일 */
+    midi-player::-moz-range-progress {
+      background-color: #4a7c59;
+    }
+
+    midi-player::-moz-range-thumb {
+      background-color: #4a7c59;
+    }
+    
+    /* 모델 설명 토글 관련 스타일 */
+    .toggle-container {
+      margin-top: 15px;
+      text-align: center;
+    }
+    
+    #toggleModelInfo {
+      background-color: #4a7c59;
+      color: white;
+      font-size: 13px;
+    }
+    
+    #toggleModelInfo:hover {
+      background-color: #3e5e30;
+    }
+    
+    #modelInfoContainer {
+      display: none;
+      margin: 20px auto;
+      padding: 15px;
+      background-color: #f1f8ec;
+      border: 1px solid #a9d198;
+      border-radius: 8px;
+      max-width: 800px;
+      text-align: left;
+    }
+    
+    .model-info {
+      display: none;
+      margin-bottom: 10px;
+    }
+    
+    .model-info h4 {
+      color: #4a7c59;
+      margin-bottom: 5px;
+    }
+    
+    .model-info p {
+      font-size: 14px;
+      margin-top: 0;
+      color: #444;
+    }
+    
+    /* 데이터셋 시각화 섹션을 위한 스타일 */
+    #datasetMidiVisualizer {
+      display: none;
+      width: 100%;
+      max-width: 800px;
+      height: 344px;
+      margin: 30px auto 10px;
+      border: 2px solid #a9d198;
+      border-radius: 10px;
+      background-color: #fff;
+    }
+    
+    #datasetLoadingMessage {
+      font-size: 18px;
+      color: #666;
+      margin: 20px 0;
+    }
+    
+    #datasetModelInfoContainer {
+      display: none;
+      margin: 20px auto;
+      padding: 15px;
+      background-color: #f1f8ec;
+      border: 1px solid #a9d198;
+      border-radius: 8px;
+      max-width: 800px;
+      text-align: left;
+    }
+    
+    button.dataset-active {
+      background-color: #8bc275;
+      color: white;
+    }
+    
+    /* 브릿지 트랙 없는 섹션 스타일 */
+    #noBridgeMidiVisualizer {
+      display: none;
+      width: 100%;
+      max-width: 800px;
+      height: 344px;
+      margin: 30px auto 10px;
+      border: 2px solid #a9d198;
+      border-radius: 10px;
+      background-color: #fff;
+    }
+    
+    #noBridgeLoadingMessage {
+      font-size: 18px;
+      color: #666;
+      margin: 20px 0;
+    }
+    
+    #noBridgeModelInfoContainer {
+      display: none;
+      margin: 20px auto;
+      padding: 15px;
+      background-color: #f1f8ec;
+      border: 1px solid #a9d198;
+      border-radius: 8px;
+      max-width: 800px;
+      text-align: left;
+    }
+    
+    button.nobridge-active {
+      background-color: #8bc275;
+      color: white;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.58,npm/@magenta/music@1.23.1/es6/core.js,npm/focus-visible@5,npm/html-midi-player@1.4.0"></script>
+</head>
+
+<body>
+  <div class="container">
+    <h1>D3PIA: A Discrete Denoising Diffusion Model for Piano Accompaniment Generation</h1>
+    <h2>Anonymous submission to ISMIR 2025</h2>
+    <p>
+      We propose a discrete diffusion-based piano accompaniment generation model, <b>D3PIA</b>, leveraging the locally aligned structure of musical accompaniments with the lead sheet in the piano roll representation.
+    </p>
+
+
+
+    <section id="full_dataset">
+      <h2>🎹 Inference Results on POP909-valid <br>
+        <span style="font-size: 0.8em;">(Merge bridge in the arrangement track)</span>
+      </h2>
+      <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px;">
+        <div>
+          <h3>🎵 Select a Song</h3>
+          <select id="songSelect" onchange="updateSongSelection()">
+            <option value="040">040</option>
+            <option value="069">069</option>
+            <option value="077">077</option>
+            <option value="240">240</option>
+            <option value="438">438</option>
+            <option value="460">460</option>
+            <option value="472">472</option>
+            <option value="622">622</option>
+            <option value="780">780</option>
+            <option value="894">894</option>
+          </select>
+        </div>
+
+        <div>
+          <h3>📝 Select a Segment</h3>
+          <select id="segmentSelect" onchange="updateSegmentSelection()">
+            <option value="seg_0_8">seg_0_8</option>
+            <option value="seg_8_16">seg_8_16</option>
+            <option value="seg_16_24">seg_16_24</option>
+            <option value="seg_24_32">seg_24_32</option>
+            <option value="seg_32_40">seg_32_40</option>
+            <option value="seg_40_48">seg_40_48</option>
+            <option value="seg_48_56">seg_48_56</option>
+            <option value="seg_56_64">seg_56_64</option>
+            <option value="seg_64_72">seg_64_72</option>
+            <option value="seg_72_80">seg_72_80</option>
+          </select>
+        </div>
+
+        <div>
+          <h3>🎲 Random Selection</h3>
+          <button onclick="selectRandomSongAndSegment()">Random Song & Segment</button>
+        </div>
+      </div>
+
+      <div>
+        <h3>🤖 Choose a Model</h3>
+        <button onclick="playDatasetMidi('d3rm', this)" class="dataset-active ours">D3PIA (ours)</button>
+        <button onclick="playDatasetMidi('valid', this)">POP909-valid</button>
+        <button onclick="playDatasetMidi('polyffusion', this)">polyffusion</button>
+        <button onclick="playDatasetMidi('wholesonggen', this)">WholeSongGen</button>
+        <button onclick="playDatasetMidi('efficient_diffusion', this)">FGG</button>
+        <button onclick="playDatasetMidi('cne_no_velocity', this)">C&E</button>
+        <button onclick="playDatasetMidi('leadsheet', this)" class="leadsheet">Leadsheet (input)</button>
+      </div>
+      
+      <div id="datasetLoadingMessage">Loading...</div>
+      <midi-visualizer id="datasetMidiVisualizer" src="demo_src/POP909_select_inst_8bar_cropped/d3rm/2025-02-21T00-01-12_temperature_1.5_200k_no_inpainting/040/seg_0_8.mid"></midi-visualizer>
+
+      <midi-player
+        id="datasetMidiPlayer"
+        src="demo_src/POP909_select_inst_8bar_cropped/d3rm/2025-02-21T00-01-12_temperature_1.5_200k_no_inpainting/040/seg_0_8.mid"
+        sound-font
+        visualizer="#full_dataset midi-visualizer">
+      </midi-player>
+
+      <div class="toggle-container">
+        <button id="toggleDatasetModelInfo" onclick="toggleDatasetModelInfo()">Show/Hide Model Info</button>
+      </div>
+      
+      <div id="datasetModelInfoContainer">
+        <div id="dataset-d3rm-info" class="model-info">
+          <h4>D3PIA</h4>
+          <p>Trained with 8 bars. Temperature = 1.5</p>
+        </div>
+        <div id="dataset-valid-info" class="model-info">
+          <h4>POP909-valid</h4>
+          <p>Dataset including melody, bridge, and arrangement track</p>
+        </div>
+        <div id="dataset-polyffusion-info" class="model-info">
+          <h4>PolyffuSion</h4>
+          <p>Trained with 8 bars. Generated with inpainting "below" option. chord CFG cond_scale = 5.0 (suggested by original authors)</p>
+        </div>
+        <div id="dataset-wholesonggen-info" class="model-info">
+          <h4>WholeSongGen</h4>
+          <p>Trained with 8 bars. Stage 4 model was used.</p>
+        </div>
+        <div id="dataset-efficient_diffusion-info" class="model-info">
+          <h4>FGG</h4>
+          <p>Trained with 8 bars (4 bars at original code), utilized the 20 epoch model (suggested by original authors)</p>
+        </div>
+        <div id="dataset-cne_no_velocity-info" class="model-info">
+          <h4>C&E (Compose & Embellish)</h4>
+          <p>Re-implemented (GPT-2) the embellish part and trained with 8 bars. no velocity token is used during training. Temperature = 1.1 and p = 0.95 (optimized by us)</p>
+        </div>
+        <div id="dataset-leadsheet-info" class="model-info">
+          <h4>Leadsheet</h4>
+          <p>Melody and chord. Segments are selected when the melody exists in more than 4 bars.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="no_bridge_dataset">
+      <h2>🎹 Inference Results on POP909-valid<br>
+        <span style="font-size: 0.8em;">(No bridge track during training)</span>
+      </h2>
+
+      <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 20px;">
+        <div>
+          <h3>🎵 Select a Song</h3>
+          <select id="noBridgeSongSelect" onchange="updateNoBridgeSongSelection()">
+            <option value="">Loading songs...</option>
+          </select>
+        </div>
+
+        <div>
+          <h3>📝 Select a Segment</h3>
+          <select id="noBridgeSegmentSelect" onchange="updateNoBridgeSegmentSelection()">
+            <option value="">Loading segments...</option>
+          </select>
+        </div>
+
+        <div>
+          <h3>🎲 Random Selection</h3>
+          <button onclick="selectRandomNoBridgeSongAndSegment()">Random Song & Segment</button>
+        </div>
+      </div>
+
+      <div>
+        <h3>🤖 Choose a Model</h3>
+        <button onclick="playNoBridgeMidi('d3rm', this)" class="nobridge-active ours">D3PIA (ours)</button>
+        <button onclick="playNoBridgeMidi('valid', this)">POP909-valid</button>
+        <button onclick="playNoBridgeMidi('polyffusion', this)">polyffusion</button>
+        <button onclick="playNoBridgeMidi('wholesonggen', this)">WholeSongGen</button>
+        <button onclick="playNoBridgeMidi('efficient_diffusion', this)">FGG</button>
+        <button onclick="playNoBridgeMidi('cne_no_velocity', this)">C&E</button>
+        <button onclick="playNoBridgeMidi('leadsheet', this)" class="leadsheet">Leadsheet (input)</button>
+      </div>
+      
+      <div id="noBridgeLoadingMessage">Loading...</div>
+      <midi-visualizer id="noBridgeMidiVisualizer" src="demo_src/POP909_no_bridge_select_inst_8bar_cropped/d3rm/2025-03-04T19-05-17_temperature_1.5_no_inpainting/040/seg_0_8.mid"></midi-visualizer>
+
+      <midi-player
+        id="noBridgeMidiPlayer"
+        src="demo_src/POP909_no_bridge_select_inst_8bar_cropped/d3rm/2025-03-04T19-05-17_temperature_1.5_no_inpainting/040/seg_0_8.mid"
+        sound-font
+        visualizer="#no_bridge_dataset midi-visualizer">
+      </midi-player>
+
+      <div class="toggle-container">
+        <button id="toggleNoBridgeModelInfo" onclick="toggleNoBridgeModelInfo()">Show/Hide Model Info</button>
+      </div>
+      
+      <div id="noBridgeModelInfoContainer">
+        <div id="nobridge-d3rm-info" class="model-info">
+          <h4>D3PIA</h4>
+          <p>Trained with 8 bars. Temperature = 1.5</p>
+        </div>
+        <div id="nobridge-valid-info" class="model-info">
+          <h4>POP909-valid</h4>
+          <p>Dataset including melody and arrangement track (bridge removed)</p>
+        </div>
+        <div id="nobridge-polyffusion-info" class="model-info">
+          <h4>PolyffuSion</h4>
+          <p>Trained with 8 bars. Generated with inpainting "below" option. chord CFG cond_scale = 5.0 (suggested by original authors)</p>
+        </div>
+        <div id="nobridge-wholesonggen-info" class="model-info">
+          <h4>WholeSongGen</h4>
+          <p>Trained with 8 bars. Stage 4 model was used.</p>
+        </div>
+        <div id="nobridge-efficient_diffusion-info" class="model-info">
+          <h4>FGG</h4>
+          <p>Trained with 8 bars (4 bars at original code), utilized the 20 epoch model (suggested by original authors)</p>
+        </div>
+        <div id="nobridge-cne_no_velocity-info" class="model-info">
+          <h4>C&E (Compose & Embellish)</h4>
+          <p>Re-implemented (GPT-2) the embellish part and trained with 8 bars. no velocity token is used during training. Temperature = 1.1 and p = 0.95 (optimized by us)</p>
+        </div>
+        <div id="nobridge-leadsheet-info" class="model-info">
+          <h4>Leadsheet</h4>
+          <p>Melody and chord. Segments are selected when the melody exists in more than 4 bars.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="listening_test">
+      <h2>🎧 Samples for the Subjective Evaluation</h2>
+
+      <div>
+        <h3>🎵 Select a Sample</h3>
+        <select id="sampleSelect" onchange="updateSample()">
+          <option value="040__seg_64_72">040__seg_64_72</option>
+          <option value="069__seg_24_32">069__seg_24_32</option>
+          <option value="077__seg_56_64">077__seg_56_64</option>
+          <option value="240__seg_112_120">240__seg_112_120</option>
+          <option value="438__seg_16_24">438__seg_16_24</option>
+          <option value="460__seg_48_56">460__seg_48_56</option>
+          <option value="472__seg_0_8">472__seg_0_8</option>
+          <option value="622__seg_56_64">622__seg_56_64</option>
+          <option value="780__seg_8_16">780__seg_8_16</option>
+          <option value="894__seg_16_24">894__seg_16_24</option>
+        </select>
+      </div>
+
+      <div>
+        <h3>🤖 Choose a Model</h3>
+        <button onclick="playMidi('d3rm', this)" class="active ours">D3PIA (ours)</button>
+        <button onclick="playMidi('valid', this)">POP909-valid</button>
+        <button onclick="playMidi('polyffusion', this)">polyffusion</button>
+        <button onclick="playMidi('wholesonggen', this)">WholeSongGen</button>
+        <button onclick="playMidi('efficient_diffusion', this)">FGG</button>
+        <button onclick="playMidi('cne_no_velocity', this)">C&E</button>
+        <button onclick="playMidi('leadsheet', this)" class="leadsheet">Leadsheet (input)</button>
+      </div>
+      
+      <div id="loadingMessage">Loading...</div>
+      <midi-visualizer id="midiVisualizer" src="demo_src/subjective_eval_samples/040__seg_64_72/d3rm.mid"></midi-visualizer>
+
+      <midi-player
+        id="midiPlayer"
+        src="demo_src/subjective_eval_samples/040__seg_64_72/d3rm.mid"
+        sound-font
+        visualizer="#listening_test midi-visualizer">
+      </midi-player>
+
+      <div class="toggle-container">
+        <button id="toggleModelInfo" onclick="toggleModelInfo()">Show/Hide Model Info</button>
+      </div>
+      
+      <div id="modelInfoContainer">
+        <div id="d3rm-info" class="model-info">
+          <h4>D3PIA</h4>
+          <p>Trained with 8 bars. Temperature = 1.5</p>
+        </div>
+        <div id="valid-info" class="model-info">
+          <h4>POP909-valid</h4>
+          <p>Dataset including melody, bridge, and arrangement track</p>
+        </div>
+        <div id="polyffusion-info" class="model-info">
+          <h4>PolyffuSion</h4>
+          <p>Trained with 8 bars. Generated with inpainting "below" option. chord CFG cond_scale = 5.0 (suggested by original authors)</p>
+        </div>
+        <div id="wholesonggen-info" class="model-info">
+          <h4>WholeSongGen</h4>
+          <p>Trained with 8 bars. Stage 4 model was used.</p>
+        </div>
+        <div id="efficient_diffusion-info" class="model-info">
+          <h4>FGG</h4>
+          <p>Trained with 8 bars (4 bars at original code), utilized the 20 epoch model (suggested by original authors)</p>
+        </div>
+        <div id="cne_no_velocity-info" class="model-info">
+          <h4>C&E (Compose & Embellish)</h4>
+          <p>Re-implemented (GPT-2) the embellish part and trained with 8 bars. no velocity token is used during training. Temperature = 1.1 and p = 0.95 (optimized by us)</p>
+        </div>
+        <div id="leadsheet-info" class="model-info">
+          <h4>Leadsheet</h4>
+          <p>Melody and chord. Segments are selected when the melody exists in more than 4 bars.</p>
+        </div>
+      </div>
+
+    </section>
+  </div>
+
+  <script>
+    let midiTempo = 120;
+    let currentModel = 'd3rm';
+
+    function fetchTempo(sampleName) {
+      return fetch('demo_src/tempos.json')
+        .then(response => response.json())
+        .then(data => {
+          const baseSampleName = sampleName.split('__')[0];
+          const tempoKey = `${baseSampleName}.mid`;
+          midiTempo = data[tempoKey] || midiTempo;
+        });
+    }
+
+    function calculatePixelsPerTimeStep(bpm) {
+      const totalBeats = 4 * 8;
+      const durationInSeconds = totalBeats / (bpm / 60);
+      return 800 / durationInSeconds;
+    }
+
+    function setupVisualizer() {
+      const midiVisualizer = document.getElementById('midiVisualizer');
+      
+      if (midiVisualizer._visualizer) {
+        try {
+          midiVisualizer.removeChild(midiVisualizer._visualizer);
+          midiVisualizer._visualizer = null;
+        } catch (e) {
+          console.log('시각화 초기화 중 오류:', e);
+        }
+      }
+      
+      midiVisualizer.config = {
+        noteHeight: 4,
+        pixelsPerTimeStep: calculatePixelsPerTimeStep(midiTempo),
+        minPitch: 22,
+        maxPitch: 108
+      };
+      
+      midiVisualizer.style.display = 'block';
+      document.getElementById('loadingMessage').style.display = 'none';
+      
+      setTimeout(() => {
+        const pianoRoll = midiVisualizer.shadowRoot?.querySelector('.piano-roll-visualizer');
+        if (pianoRoll) {
+          pianoRoll.style.textAlign = 'left';
+          
+          const svg = pianoRoll.querySelector('svg');
+          if (svg) {
+            svg.style.margin = '0';
+            svg.style.display = 'inline-block';
+            svg.style.position = 'relative';
+            svg.style.left = '0';
+          }
+        }
+      }, 100);
+    }
+
+    function initializeVisualizer(sampleName) {
+      fetchTempo(sampleName).then(setupVisualizer);
+    }
+
+    document.getElementById('midiVisualizer').onloadeddata = () => {
+      const sampleName = document.getElementById('sampleSelect').value;
+      initializeVisualizer(sampleName);
+    };
+
+    function updateSample() {
+      const sampleName = document.getElementById('sampleSelect').value;
+      const midiPlayer = document.getElementById('midiPlayer');
+      const midiVisualizer = document.getElementById('midiVisualizer');
+
+      midiPlayer.src = `demo_src/subjective_eval_samples/${sampleName}/d3rm.mid`;
+      midiVisualizer.src = `demo_src/subjective_eval_samples/${sampleName}/d3rm.mid`;
+
+      initializeVisualizer(sampleName);
+
+      document.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+      document.querySelector('button[onclick*="d3rm"]').classList.add('active');
+      
+      currentModel = 'd3rm';
+      updateModelInfo();
+    }
+
+    window.onload = () => {
+      // 기존 주관적 평가 샘플 초기화
+      const defaultSample = document.getElementById('sampleSelect').value;
+      initializeVisualizer(defaultSample);
+      
+      // 노래 및 세그먼트 목록 가져오기
+      Promise.all([fetchSongList(), fetchNoBridgeSongList()]).then(() => {
+        // 두 목록이 모두 로드된 후 공통된 랜덤 선택 실행
+        selectRandomForBothSections();
+      });
+      
+      // 데이터셋 시각화 초기화
+      initializeDatasetVisualizer();
+      
+      // 브릿지 트랙 없는 데이터셋 시각화 초기화
+      document.getElementById('noBridgeMidiVisualizer').onloadeddata = () => {
+        fetchDatasetTempo(currentNoBridgeSong).then(setupNoBridgeVisualizer);
+      };
+    };
+
+    function playMidi(modelName, button) {
+      const sampleName = document.getElementById('sampleSelect').value;
+      const midiPlayer = document.getElementById('midiPlayer');
+      const midiVisualizer = document.getElementById('midiVisualizer');
+
+      midiPlayer.src = `demo_src/subjective_eval_samples/${sampleName}/${modelName}.mid`;
+      midiVisualizer.src = `demo_src/subjective_eval_samples/${sampleName}/${modelName}.mid`;
+
+      midiPlayer.onloadeddata = () => midiPlayer.play().catch(console.error);
+      midiVisualizer.onloadeddata = () => midiVisualizer.play?.();
+
+      document.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      
+      currentModel = modelName;
+      updateModelInfo();
+    }
+    
+    // 모델 설명 토글 기능
+    function toggleModelInfo() {
+      const container = document.getElementById('modelInfoContainer');
+      if (container.style.display === 'block') {
+        container.style.display = 'none';
+      } else {
+        container.style.display = 'block';
+        updateModelInfo();
+      }
+    }
+    
+    // 현재 선택된 모델의 설명만 표시
+    function updateModelInfo() {
+      document.querySelectorAll('.model-info').forEach(info => {
+        info.style.display = 'none';
+      });
+      
+      const selectedInfo = document.getElementById(`${currentModel}-info`);
+      if (selectedInfo) {
+        selectedInfo.style.display = 'block';
+      }
+    }
+    
+    // 데이터셋 시각화 관련 변수
+    let datasetMidiTempo = 120;
+    let currentDatasetModel = 'd3rm';
+    let currentSong = '040';
+    let currentSegment = 'seg_0_8';
+    let availableSongs = {};
+    
+    // 모델별 실제 폴더 경로 매핑
+    const modelFolderPaths = {
+      'd3rm': 'd3rm/2025-02-21T00-01-12_temperature_1.5_200k_no_inpainting',
+      'efficient_diffusion': 'efficient_diffusion/rhythm_True_8bars_20epoch',
+      'polyffusion': 'polyffusion/uncond_5.0',
+      'wholesonggen': 'wholesonggen/whole-song-gen-02-21_002549_new_split',
+      'valid': 'valid',
+      'cne_no_velocity': 'cne_no_velocity',
+      'leadsheet': 'leadsheet'
+    };
+    
+    // 모델별 실제 폴더 경로 매핑
+    const no_bridge_modelFolderPaths = {
+      'd3rm': 'd3rm/2025-03-04T19-05-17_temperature_1.5_no_inpainting',
+      'efficient_diffusion': 'efficient_diffusion/rhythm_True_8bars_20epoch',
+      'polyffusion': 'polyffusion/uncond_5.0',
+      'wholesonggen': 'wholesonggen',
+      'valid': 'valid',
+      'cne_no_velocity': 'cne_no_velocity',
+      'leadsheet': 'leadsheet'
+    };
+
+    // 노래 및 세그먼트 목록 가져오기
+    function fetchSongList() {
+      return fetch('demo_src/songs_with_segments.json')
+        .then(response => response.json())
+        .then(data => {
+          availableSongs = data;
+          populateSongSelect();
+        })
+        .catch(error => {
+          console.error('노래 목록을 가져오는 중 오류 발생:', error);
+          // 오류 발생 시 기본 목록 사용
+          availableSongs = {
+            "040": ["seg_0_8.mid", "seg_8_16.mid", "seg_16_24.mid", "seg_24_32.mid", "seg_64_72.mid"],
+            "069": ["seg_24_32.mid"],
+            "077": ["seg_56_64.mid"],
+            "240": ["seg_112_120.mid"],
+            "438": ["seg_16_24.mid"],
+            "460": ["seg_48_56.mid"],
+            "472": ["seg_0_8.mid"],
+            "622": ["seg_56_64.mid"],
+            "780": ["seg_8_16.mid"],
+            "894": ["seg_16_24.mid"]
+          };
+          populateSongSelect();
+        });
+    }
+    
+    // 노래 선택 드롭다운 채우기
+    function populateSongSelect() {
+      const songSelect = document.getElementById('songSelect');
+      songSelect.innerHTML = '';
+      
+      // 사용 가능한 노래 목록 추가
+      Object.keys(availableSongs).sort().forEach(song => {
+        const option = document.createElement('option');
+        option.value = song;
+        option.textContent = song;
+        songSelect.appendChild(option);
+      });
+      
+      // 첫 번째 노래 선택
+      if (Object.keys(availableSongs).length > 0) {
+        currentSong = Object.keys(availableSongs).sort()[0];
+        songSelect.value = currentSong;
+        populateSegmentSelect();
+      }
+    }
+    
+    // 세그먼트 선택 드롭다운 채우기
+    function populateSegmentSelect() {
+      const segmentSelect = document.getElementById('segmentSelect');
+      segmentSelect.innerHTML = '';
+      
+      if (availableSongs[currentSong]) {
+        // 사용 가능한 세그먼트 목록 추가
+        availableSongs[currentSong].forEach(segment => {
+          const segmentName = segment.replace('.mid', '');
+          const option = document.createElement('option');
+          option.value = segmentName;
+          option.textContent = segmentName;
+          segmentSelect.appendChild(option);
+        });
+        
+        // 첫 번째 세그먼트 선택
+        if (availableSongs[currentSong].length > 0) {
+          currentSegment = availableSongs[currentSong][0].replace('.mid', '');
+          segmentSelect.value = currentSegment;
+          updateDatasetMidiPath();
+        }
+      }
+    }
+    
+    // 데이터셋 템포 가져오기
+    function fetchDatasetTempo(songName) {
+      return fetch('demo_src/tempos.json')
+        .then(response => response.json())
+        .then(data => {
+          const tempoKey = `${songName}.mid`;
+          datasetMidiTempo = data[tempoKey] || datasetMidiTempo;
+        });
+    }
+    
+    // 데이터셋 시각화 설정
+    function setupDatasetVisualizer() {
+      const midiVisualizer = document.getElementById('datasetMidiVisualizer');
+      
+      if (midiVisualizer._visualizer) {
+        try {
+          midiVisualizer.removeChild(midiVisualizer._visualizer);
+          midiVisualizer._visualizer = null;
+        } catch (e) {
+          console.log('데이터셋 시각화 초기화 중 오류:', e);
+        }
+      }
+      
+      midiVisualizer.config = {
+        noteHeight: 4,
+        pixelsPerTimeStep: calculatePixelsPerTimeStep(datasetMidiTempo),
+        minPitch: 22,
+        maxPitch: 108
+      };
+      
+      midiVisualizer.style.display = 'block';
+      document.getElementById('datasetLoadingMessage').style.display = 'none';
+      
+      setTimeout(() => {
+        const pianoRoll = midiVisualizer.shadowRoot?.querySelector('.piano-roll-visualizer');
+        if (pianoRoll) {
+          pianoRoll.style.textAlign = 'left';
+          
+          const svg = pianoRoll.querySelector('svg');
+          if (svg) {
+            svg.style.margin = '0';
+            svg.style.display = 'inline-block';
+            svg.style.position = 'relative';
+            svg.style.left = '0';
+          }
+        }
+      }, 100);
+    }
+    
+    // 데이터셋 시각화 초기화
+    function initializeDatasetVisualizer() {
+      fetchDatasetTempo(currentSong).then(setupDatasetVisualizer);
+    }
+    
+    // 데이터셋 모델 정보 토글 기능
+    function toggleDatasetModelInfo() {
+      const container = document.getElementById('datasetModelInfoContainer');
+      if (container.style.display === 'block') {
+        container.style.display = 'none';
+      } else {
+        container.style.display = 'block';
+        updateDatasetModelInfo();
+      }
+    }
+    
+    // 현재 선택된 데이터셋 모델의 설명만 표시
+    function updateDatasetModelInfo() {
+      document.querySelectorAll('#datasetModelInfoContainer .model-info').forEach(info => {
+        info.style.display = 'none';
+      });
+      
+      const selectedInfo = document.getElementById(`dataset-${currentDatasetModel}-info`);
+      if (selectedInfo) {
+        selectedInfo.style.display = 'block';
+      }
+    }
+    
+    // 노래 선택 변경 시 호출되는 함수
+    function updateSongSelection() {
+      currentSong = document.getElementById('songSelect').value;
+      populateSegmentSelect();
+    }
+    
+    // 세그먼트 선택 변경 시 호출되는 함수
+    function updateSegmentSelection() {
+      currentSegment = document.getElementById('segmentSelect').value;
+      updateDatasetMidiPath();
+    }
+    
+    // 데이터셋 MIDI 경로 업데이트
+    function updateDatasetMidiPath() {
+      const midiPlayer = document.getElementById('datasetMidiPlayer');
+      const midiVisualizer = document.getElementById('datasetMidiVisualizer');
+      const modelPath = modelFolderPaths[currentDatasetModel];
+      const midiPath = `demo_src/POP909_select_inst_8bar_cropped/${modelPath}/${currentSong}/${currentSegment}.mid`;
+      
+      midiPlayer.src = midiPath;
+      midiVisualizer.src = midiPath;
+      
+      initializeDatasetVisualizer();
+      
+      // 버튼 활성화 상태 업데이트
+      document.querySelectorAll('#full_dataset button').forEach(btn => btn.classList.remove('dataset-active'));
+      document.querySelector(`#full_dataset button[onclick*="${currentDatasetModel}"]`).classList.add('dataset-active');
+    }
+    
+    // 데이터셋 MIDI 재생
+    function playDatasetMidi(modelName, button) {
+      currentDatasetModel = modelName;
+      
+      const midiPlayer = document.getElementById('datasetMidiPlayer');
+      const midiVisualizer = document.getElementById('datasetMidiVisualizer');
+      const modelPath = modelFolderPaths[modelName];
+      const midiPath = `demo_src/POP909_select_inst_8bar_cropped/${modelPath}/${currentSong}/${currentSegment}.mid`;
+      
+      midiPlayer.src = midiPath;
+      midiVisualizer.src = midiPath;
+      
+      midiPlayer.onloadeddata = () => midiPlayer.play().catch(console.error);
+      midiVisualizer.onloadeddata = () => midiVisualizer.play?.();
+      
+      // 버튼 활성화 상태 업데이트
+      document.querySelectorAll('#full_dataset button').forEach(btn => btn.classList.remove('dataset-active'));
+      button.classList.add('dataset-active');
+      
+      updateDatasetModelInfo();
+    }
+    
+    // 페이지 로드 시 데이터셋 시각화 초기화
+    document.getElementById('datasetMidiVisualizer').onloadeddata = () => {
+      initializeDatasetVisualizer();
+    };
+    
+    // 브릿지 트랙 없는 데이터셋 시각화 설정
+    function setupNoBridgeVisualizer() {
+      const midiVisualizer = document.getElementById('noBridgeMidiVisualizer');
+      
+      if (midiVisualizer._visualizer) {
+        try {
+          midiVisualizer.removeChild(midiVisualizer._visualizer);
+          midiVisualizer._visualizer = null;
+        } catch (e) {
+          console.log('브릿지 없는 데이터셋 시각화 초기화 중 오류:', e);
+        }
+      }
+      
+      midiVisualizer.config = {
+        noteHeight: 4,
+        pixelsPerTimeStep: calculatePixelsPerTimeStep(noBridgeMidiTempo),
+        minPitch: 22,
+        maxPitch: 108
+      };
+      
+      midiVisualizer.style.display = 'block';
+      document.getElementById('noBridgeLoadingMessage').style.display = 'none';
+      
+      setTimeout(() => {
+        const pianoRoll = midiVisualizer.shadowRoot?.querySelector('.piano-roll-visualizer');
+        if (pianoRoll) {
+          pianoRoll.style.textAlign = 'left';
+          
+          const svg = pianoRoll.querySelector('svg');
+          if (svg) {
+            svg.style.margin = '0';
+            svg.style.display = 'inline-block';
+            svg.style.position = 'relative';
+            svg.style.left = '0';
+          }
+        }
+      }, 100);
+    }
+    
+    // 브릿지 트랙이 없는 조건에 대한 새로운 섹션 관련 변수
+    let noBridgeMidiTempo = 120;
+    let currentNoBridgeModel = 'd3rm';
+    let currentNoBridgeSong = '040';
+    let currentNoBridgeSegment = 'seg_0_8';
+    let noBridgeAvailableSongs = {};
+    
+    // 노래 및 세그먼트 목록 가져오기
+    function fetchNoBridgeSongList() {
+      return fetch('demo_src/songs_with_segments.json')
+        .then(response => response.json())
+        .then(data => {
+          noBridgeAvailableSongs = data;
+          populateNoBridgeSongSelect();
+        })
+        .catch(error => {
+          console.error('브릿지 없는 노래 목록을 가져오는 중 오류 발생:', error);
+          // 오류 발생 시 기본 목록 사용
+          noBridgeAvailableSongs = {
+            "040": ["seg_0_8.mid", "seg_8_16.mid", "seg_16_24.mid", "seg_24_32.mid", "seg_64_72.mid"],
+            "069": ["seg_24_32.mid"],
+            "077": ["seg_56_64.mid"],
+            "240": ["seg_112_120.mid"],
+            "438": ["seg_16_24.mid"],
+            "460": ["seg_48_56.mid"],
+            "472": ["seg_0_8.mid"],
+            "622": ["seg_56_64.mid"],
+            "780": ["seg_8_16.mid"],
+            "894": ["seg_16_24.mid"]
+          };
+          populateNoBridgeSongSelect();
+        });
+    }
+    
+    // 노래 선택 드롭다운 채우기
+    function populateNoBridgeSongSelect() {
+      const songSelect = document.getElementById('noBridgeSongSelect');
+      songSelect.innerHTML = '';
+      
+      // 사용 가능한 노래 목록 추가
+      Object.keys(noBridgeAvailableSongs).sort().forEach(song => {
+        const option = document.createElement('option');
+        option.value = song;
+        option.textContent = song;
+        songSelect.appendChild(option);
+      });
+      
+      // 첫 번째 노래 선택
+      if (Object.keys(noBridgeAvailableSongs).length > 0) {
+        currentNoBridgeSong = Object.keys(noBridgeAvailableSongs).sort()[0];
+        songSelect.value = currentNoBridgeSong;
+        populateNoBridgeSegmentSelect();
+      }
+    }
+    
+    // 세그먼트 선택 드롭다운 채우기
+    function populateNoBridgeSegmentSelect() {
+      const segmentSelect = document.getElementById('noBridgeSegmentSelect');
+      segmentSelect.innerHTML = '';
+      
+      if (noBridgeAvailableSongs[currentNoBridgeSong]) {
+        // 사용 가능한 세그먼트 목록 추가
+        noBridgeAvailableSongs[currentNoBridgeSong].forEach(segment => {
+          const segmentName = segment.replace('.mid', '');
+          const option = document.createElement('option');
+          option.value = segmentName;
+          option.textContent = segmentName;
+          segmentSelect.appendChild(option);
+        });
+        
+        // 첫 번째 세그먼트 선택
+        if (noBridgeAvailableSongs[currentNoBridgeSong].length > 0) {
+          currentNoBridgeSegment = noBridgeAvailableSongs[currentNoBridgeSong][0].replace('.mid', '');
+          segmentSelect.value = currentNoBridgeSegment;
+          updateNoBridgeMidiPath();
+        }
+      }
+    }
+    
+    // 브릿지 없는 데이터셋 템포 가져오기
+    function fetchNoBridgeDatasetTempo(songName) {
+      return fetch('demo_src/tempos.json')
+        .then(response => response.json())
+        .then(data => {
+          const tempoKey = `${songName}.mid`;
+          noBridgeMidiTempo = data[tempoKey] || noBridgeMidiTempo;
+        });
+    }
+    
+    // 브릿지 없는 데이터셋 시각화 초기화
+    function initializeNoBridgeDatasetVisualizer() {
+      fetchNoBridgeDatasetTempo(currentNoBridgeSong).then(setupNoBridgeVisualizer);
+    }
+    
+    // 브릿지 없는 데이터셋 모델 정보 토글 기능
+    function toggleNoBridgeModelInfo() {
+      const container = document.getElementById('noBridgeModelInfoContainer');
+      if (container.style.display === 'block') {
+        container.style.display = 'none';
+      } else {
+        container.style.display = 'block';
+        updateNoBridgeModelInfo();
+      }
+    }
+    
+    // 현재 선택된 브릿지 없는 데이터셋 모델의 설명만 표시
+    function updateNoBridgeModelInfo() {
+      document.querySelectorAll('#noBridgeModelInfoContainer .model-info').forEach(info => {
+        info.style.display = 'none';
+      });
+      
+      const selectedInfo = document.getElementById(`nobridge-${currentNoBridgeModel}-info`);
+      if (selectedInfo) {
+        selectedInfo.style.display = 'block';
+      }
+    }
+    
+    // 브릿지 없는 노래 선택 변경 시 호출되는 함수
+    function updateNoBridgeSongSelection() {
+      currentNoBridgeSong = document.getElementById('noBridgeSongSelect').value;
+      populateNoBridgeSegmentSelect();
+    }
+    
+    // 브릿지 없는 세그먼트 선택 변경 시 호출되는 함수
+    function updateNoBridgeSegmentSelection() {
+      currentNoBridgeSegment = document.getElementById('noBridgeSegmentSelect').value;
+      updateNoBridgeMidiPath();
+    }
+    
+    // 브릿지 없는 데이터셋 MIDI 경로 업데이트
+    function updateNoBridgeMidiPath() {
+      const midiPlayer = document.getElementById('noBridgeMidiPlayer');
+      const midiVisualizer = document.getElementById('noBridgeMidiVisualizer');
+      const modelPath = no_bridge_modelFolderPaths[currentNoBridgeModel];
+      const midiPath = `demo_src/POP909_no_bridge_select_inst_8bar_cropped/${modelPath}/${currentNoBridgeSong}/${currentNoBridgeSegment}.mid`;
+      
+      midiPlayer.src = midiPath;
+      midiVisualizer.src = midiPath;
+      
+      initializeNoBridgeDatasetVisualizer();
+      
+      // 버튼 활성화 상태 업데이트
+      document.querySelectorAll('#no_bridge_dataset button').forEach(btn => btn.classList.remove('nobridge-active'));
+      document.querySelector(`#no_bridge_dataset button[onclick*="${currentNoBridgeModel}"]`).classList.add('nobridge-active');
+    }
+    
+    // 브릿지 없는 데이터셋 MIDI 재생
+    function playNoBridgeMidi(modelName, button) {
+      currentNoBridgeModel = modelName;
+      
+      const midiPlayer = document.getElementById('noBridgeMidiPlayer');
+      const midiVisualizer = document.getElementById('noBridgeMidiVisualizer');
+      const modelPath = no_bridge_modelFolderPaths[modelName];
+      const midiPath = `demo_src/POP909_no_bridge_select_inst_8bar_cropped/${modelPath}/${currentNoBridgeSong}/${currentNoBridgeSegment}.mid`;
+      
+      midiPlayer.src = midiPath;
+      midiVisualizer.src = midiPath;
+      
+      midiPlayer.onloadeddata = () => midiPlayer.play().catch(console.error);
+      midiVisualizer.onloadeddata = () => midiVisualizer.play?.();
+      
+      // 버튼 활성화 상태 업데이트
+      document.querySelectorAll('#no_bridge_dataset button').forEach(btn => btn.classList.remove('nobridge-active'));
+      button.classList.add('nobridge-active');
+      
+      updateNoBridgeModelInfo();
+    }
+    
+    // 페이지 로드 시 브릿지 없는 데이터셋 시각화 초기화
+    document.getElementById('noBridgeMidiVisualizer').onloadeddata = () => {
+      initializeNoBridgeDatasetVisualizer();
+    };
+
+    // 두 섹션에 대해 동일한 랜덤 선택을 수행하는 함수
+    function selectRandomForBothSections() {
+      const songSelect = document.getElementById('songSelect');
+      const songOptions = Array.from(songSelect.options);
+      const randomSongIndex = Math.floor(Math.random() * songOptions.length);
+      const selectedSong = songOptions[randomSongIndex].value;
+      
+      // 브릿지 있는 섹션 설정
+      songSelect.value = selectedSong;
+      updateSongSelection();
+      
+      // 브릿지 없는 섹션 설정
+      const noBridgeSongSelect = document.getElementById('noBridgeSongSelect');
+      noBridgeSongSelect.value = selectedSong;
+      updateNoBridgeSongSelection();
+      
+      // 약간의 지연 후 세그먼트 선택
+      setTimeout(() => {
+        const segmentSelect = document.getElementById('segmentSelect');
+        const segmentOptions = Array.from(segmentSelect.options);
+        const randomSegmentIndex = Math.floor(Math.random() * segmentOptions.length);
+        const selectedSegment = segmentOptions[randomSegmentIndex].value;
+        
+        // 브릿지 있는 섹션 세그먼트 설정
+        segmentSelect.value = selectedSegment;
+        updateSegmentSelection();
+        
+        // 브릿지 없는 섹션 세그먼트 설정
+        const noBridgeSegmentSelect = document.getElementById('noBridgeSegmentSelect');
+        noBridgeSegmentSelect.value = selectedSegment;
+        updateNoBridgeSegmentSelection();
+      }, 100);
+    }
+
+    // 기존의 랜덤 선택 버튼에도 새로운 함수 연결
+    function selectRandomSongAndSegment() {
+      selectRandomForBothSections();
+    }
+    
+    function selectRandomNoBridgeSongAndSegment() {
+      selectRandomForBothSections();
+    }
+  </script>
+</body>
+</html>

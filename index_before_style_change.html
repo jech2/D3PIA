@@ -1,0 +1,305 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>D3PIA: A Discrete Denoising Diffusion Model for Piano Accompaniment Generation</title>
+  <style>
+    body {
+      text-align: center; /* 모든 텍스트를 가운데 정렬 */
+      padding: 0 500px; /* 좌우 패딩 추가 */
+      background-color: #f4f4f4; /* 배경색 추가 */
+      font-family: Arial, sans-serif; /* 글꼴 스타일 추가 */
+    }
+    h1 {
+      color: #333; /* 제목 색상 */
+      margin-bottom: 20px; /* 제목 아래 여백 */
+    }
+    h2, h3 {
+      color: #555; /* 부제목 색상 */
+    }
+    .active {
+      background-color: #4CAF50; /* 클릭된 버튼의 배경색 */
+      color: white; /* 클릭된 버튼의 글자색 */
+    }
+    button {
+      background-color: #008CBA; /* 버튼 기본 색상 */
+      color: white; /* 버튼 글자색 */
+      border: none; /* 테두리 제거 */
+      padding: 10px 20px; /* 패딩 추가 */
+      margin: 5px; /* 버튼 간 여백 */
+      border-radius: 5px; /* 버튼 모서리 둥글게 */
+      cursor: pointer; /* 커서 포인터로 변경 */
+      transition: background-color 0.3s; /* 배경색 전환 효과 */
+    }
+    button:hover {
+      background-color: #005f73; /* 버튼 호버 색상 */
+    }
+    /* Custom visualizer style */
+    .vis midi-visualizer .piano-roll-visualizer {
+        /* background: #252a34; */
+        border: 2px solid black;
+        border-top: none;
+        border-radius: 0 0 10px 10px;
+        margin: 4px;
+        margin-top: 0;
+        overflow: auto;
+    }
+
+    .alone midi-visualizer .piano-roll-visualizer {
+    /* background: #252a34; */
+    border: 2px solid black;
+    border-radius: 10px 10px 10px 10px;
+    margin: 5px;
+    overflow: auto;
+    }
+
+    midi-visualizer svg rect.note {
+        opacity: 0.6;
+        stroke-width: 2;
+    }
+
+    midi-visualizer svg rect.note[data-instrument="0"] {
+        fill: #1c71d8;
+        /* stroke: #500; */
+    }
+
+    .inp midi-visualizer svg rect.note[data-instrument="0"] {
+        fill: #444;
+        /* stroke: #500; */
+    }
+
+    .inp midi-visualizer svg rect.note[data-instrument="1"] {
+        fill: #1c71d8;
+        /* stroke: #055; */
+    }
+
+    midi-visualizer svg rect.note[data-is-drum="true"] {
+        fill: #888;
+        /* stroke: #888; */
+    }
+
+    midi-visualizer svg rect.note.active {
+        opacity: 0.9;
+        stroke: #000;
+    }
+
+    midi-visualizer .piano-roll-visualizer svg {
+      background: 
+      linear-gradient(
+        90deg,
+        #aaa 1px,                     /* 마디 선 */
+        transparent 1px 25px,        /* 1비트 폭 */
+        rgba(170, 170, 170, 0.3) 26px,
+        transparent 26px 50px,
+        rgba(170, 170, 170, 0.3) 51px,
+        transparent 51px 75px,
+        rgba(170, 170, 170, 0.3) 76px,
+        transparent 76px
+      ) left / 100px repeat;
+        }
+
+    #midiVisualizer {
+      display: none; /* 초기에는 숨김 */
+      width: 800px; /* 원하는 너비로 설정 */
+      height: 300px; /* 원하는 높이로 설정 */
+      overflow: auto; /* 넘칠 경우 스크롤 가능 */
+      margin: 0 auto; /* 가운데 정렬 */
+      border: 2px solid #000; /* 테두리 추가 */
+      border-radius: 5px; /* 테두리 모서리 둥글게 */
+    }
+    #loadingMessage {
+      text-align: center;
+      font-size: 20px;
+      margin: 20px;
+      color: #333; /* 로딩 메시지 색상 */
+    }
+
+  </style>
+</head>
+<script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.58,npm/@magenta/music@1.23.1/es6/core.js,npm/focus-visible@5,npm/html-midi-player@1.4.0"></script>
+
+<body>
+  <h1>D3PIA: A Discrete Denoising Diffusion Model for Piano Accompaniment Generation</h1>
+    <p>
+        We propose a discrete diffusion-based piano accompaniment generation model, D3PIA, leveraging the locally aligned structure of musical accompaniments with the lead sheet in the piano roll representation. Our model incorporates Neighborhood Attention (NA) to both encode the lead sheet and condition it for predicting note states in the piano accompaniment, which enhances local contextual modeling by efficiently attending to nearby melody and chord conditions.
+    </p>
+<section id="listening_test">
+    <h2>Listening test samples including comparison models</h2>
+
+    <div>
+        <h3>Choose a sample:</h3>
+        <select id="sampleSelect" onchange="updateSample()">
+          <option value="040__seg_64_72">040__seg_64_72</option>
+          <option value="069__seg_24_32">069__seg_24_32</option>
+          <option value="077__seg_56_64">077__seg_56_64</option>
+          <option value="240__seg_112_120">240__seg_112_120</option>
+          <option value="438__seg_16_24">438__seg_16_24</option>
+          <option value="460__seg_48_56">460__seg_48_56</option>
+          <option value="472__seg_0_8">472__seg_0_8</option>
+          <option value="622__seg_56_64">622__seg_56_64</option>
+          <option value="780__seg_8_16">780__seg_8_16</option>
+          <option value="894__seg_16_24">894__seg_16_24</option>
+        </select>
+      </div>
+    
+      <div>
+        <h3>Choose a model:</h3>
+        <button onclick="playMidi('d3rm', this)" class="active">d3rm</button>
+        <button onclick="playMidi('valid', this)">valid</button>
+        <button onclick="playMidi('polyffusion', this)">polyffusion</button>
+        <button onclick="playMidi('wholesonggen', this)">wholesonggen</button>
+        <button onclick="playMidi('efficient_diffusion', this)">efficient_diffusion</button>
+        <button onclick="playMidi('cne_no_velocity', this)">C&E</button>
+        <button onclick="playMidi('leadsheet', this)">leadsheet</button>
+      </div>
+    
+
+    <div id="loadingMessage">Loading...</div> <!-- 로딩 메시지 -->
+    <midi-visualizer id="midiVisualizer" src="demo_src/subjective_eval_samples/040__seg_64_72/d3rm.mid"></midi-visualizer>
+
+    <midi-player
+    id="midiPlayer"
+    src="demo_src/subjective_eval_samples/040__seg_64_72/d3rm.mid"
+    sound-font visualizer="#listening_test midi-visualizer">
+  </midi-player>
+  
+
+  <script>
+    let midiTempo = 120; // 기본 템포 (BPM)
+
+    // tempos.json 파일에서 템포를 가져오는 함수
+    function fetchTempo(sampleName) {
+      return fetch('demo_src/tempos.json') // 경로가 올바른지 확인
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.json();
+        })
+        .then(data => {
+          // 샘플 이름을 '__'로 분리하여 첫 번째 부분을 추출
+          const baseSampleName = sampleName.split('__')[0]; // 예: '438__seg_16_24' -> '438'
+          const tempoKey = `${baseSampleName}.mid`; // .mid를 추가하여 키 생성
+          console.log(`Looking for tempo key: ${tempoKey}`); // 템포 키 확인
+          const tempo = data[tempoKey];
+          console.log(`Fetched tempo for ${tempoKey}:`, tempo); // 템포 값 확인
+          if (tempo !== undefined) { // undefined 체크
+            midiTempo = tempo; // 템포 값을 업데이트
+          } else {
+            console.warn(`Tempo for ${tempoKey} not found, using default.`);
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching tempos.json:', error);
+        });
+    }
+
+    function calculatePixelsPerTimeStep(bpm) {
+      const beatsPerMeasure = 4;
+      const measures = 8;
+      const totalBeats = beatsPerMeasure * measures;
+    
+      const durationInSeconds = totalBeats / (bpm / 60); // 8마디가 걸리는 시간 (초)
+    
+      // 이 절대 시간 동안 totalPixelWidth로 표현할 거니까
+      const totalPixelWidth = 800;
+      const pixelsPerSecond = totalPixelWidth / durationInSeconds;
+      console.log('pixelsPerSecond:', pixelsPerSecond);
+      return pixelsPerSecond;
+    }
+    
+
+    // MIDI 비주얼라이저가 로드된 후 설정을 적용하는 함수
+    function setupVisualizer() {
+      const midiVisualizer = document.getElementById('midiVisualizer');
+
+      // BPM을 기반으로 pixelsPerTimeStep 계산
+      const pixelsPerTimeStep = calculatePixelsPerTimeStep(midiTempo);
+      console.log('pixelsPerTimeStep:', pixelsPerTimeStep);
+      // 비주얼라이저의 설정을 지정
+      midiVisualizer.config = {
+        noteHeight: 4, // 노트 높이 설정
+        pixelsPerTimeStep: pixelsPerTimeStep, // 시간 단계당 픽셀 수 설정
+        minPitch: 22 // 최소 피치 설정
+      };
+
+      // 비주얼라이저를 표시
+      midiVisualizer.style.display = 'block'; // 비주얼라이저 표시
+      document.getElementById('loadingMessage').style.display = 'none'; // 로딩 메시지 숨김
+    }
+
+    // 샘플 이름을 가져와서 템포를 설정하고 비주얼라이저를 초기화하는 함수
+    function initializeVisualizer(sampleName) {
+      fetchTempo(sampleName).then(() => {
+        setupVisualizer();
+      });
+    }
+
+    // MIDI 비주얼라이저가 로드된 후 설정을 적용
+    document.getElementById('midiVisualizer').onloadeddata = () => {
+      const sampleName = document.getElementById('sampleSelect').value.split('__')[0]; // 샘플 이름 추출
+      initializeVisualizer(sampleName);
+    };
+
+    function updateSample() {
+      const sampleName = document.getElementById('sampleSelect').value;
+      const midiPlayer = document.getElementById('midiPlayer');
+      const midiVisualizer = document.getElementById('midiVisualizer');
+
+      // 선택한 샘플에 따라 src 업데이트
+      midiPlayer.src = `demo_src/subjective_eval_samples/${sampleName}/d3rm.mid`;
+      midiVisualizer.src = `demo_src/subjective_eval_samples/${sampleName}/d3rm.mid`;
+
+      // 샘플 이름을 가져와서 템포를 설정하고 비주얼라이저를 초기화하는 함수
+      initializeVisualizer(sampleName);
+
+      // 모든 버튼에서 active 클래스 제거
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(btn => btn.classList.remove('active'));
+
+      // d3rm 버튼에 active 클래스 추가
+      document.querySelector('button[onclick*="d3rm"]').classList.add('active');
+    }
+
+    // 페이지가 로드될 때 기본 샘플로 초기화
+    window.onload = () => {
+      const defaultSampleName = document.getElementById('sampleSelect').value; // 기본 샘플 이름 가져오기
+      initializeVisualizer(defaultSampleName); // 기본 샘플로 비주얼라이저 초기화
+    };
+
+    function playMidi(modelName, button) {
+      const sampleName = document.getElementById('sampleSelect').value; // 선택한 샘플 이름 가져오기
+      const midiPlayer = document.getElementById('midiPlayer');
+      midiPlayer.src = `demo_src/subjective_eval_samples/${sampleName}/${modelName}.mid`;
+
+      // MIDI 파일이 로드된 후에 재생
+      midiPlayer.onloadeddata = () => {
+        midiPlayer.play().catch(error => {
+          console.error("Error playing MIDI:", error);
+        });
+      };
+
+      // MIDI 비주얼라이저 업데이트
+      const midiVisualizer = document.getElementById('midiVisualizer');
+      midiVisualizer.src = `demo_src/subjective_eval_samples/${sampleName}/${modelName}.mid`;
+      
+      // MIDI 비주얼라이저가 로드된 후에 재생
+      midiVisualizer.onloadeddata = () => {
+        midiVisualizer.play().catch(error => {
+          console.error("Error playing MIDI visualizer:", error);
+        });
+      };
+
+      // 모든 버튼에서 active 클래스 제거
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(btn => btn.classList.remove('active'));
+
+      // 클릭된 버튼에 active 클래스 추가
+      button.classList.add('active');
+    }
+  </script>
+    </section>
+
+</body>
+</html>
