@@ -12,7 +12,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='piano roll to midi')
     parser.add_argument('--wandb_id', type=str, help='wandb id')
-    parser.add_argument('--pr_res', type=int, default=32, help='piano roll resolution')
+    parser.add_argument('--pr_res', type=int, default=16, help='piano roll resolution')
     parser.add_argument('--unit', type=str, default='quantize_grid', help='unit of time')
     args = parser.parse_args()
 

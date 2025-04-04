@@ -1,5 +1,5 @@
 import torch
-from transcription.polydis.ptvae import TextureEncoder
+from d3pia.polydis.ptvae import TextureEncoder
 
 from torch import nn
 from torch.distributions import Normal

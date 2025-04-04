@@ -1,11 +1,10 @@
 import torch as th
 from torch import nn
 
-from transcription.diffusion.natten_diffusion import NeighborhoodAttention2D_diffusion, NeighborhoodAttention1D_diffusion, NeighborhoodCrossAttention2D_diffusion, NeighborhoodAttention2D_diffusion_encoder
+from d3pia.diffusion.natten_diffusion import NeighborhoodAttention2D_diffusion 
 from typing import List
 
-
-class TransModel(nn.Module):
+class Decoder(nn.Module):
     def __init__(self,
                 label_embed_dim: int,
                 lstm_dim: int,
@@ -16,7 +15,6 @@ class TransModel(nn.Module):
                 diffusion_step: int,
                 timestep_type: str,
                 natten_direction: str,
-                attention_type: str,
                 spatial_size: List[int],
                 use_style_enc: bool,
                 use_chord_enc: bool,
@@ -44,7 +42,6 @@ class TransModel(nn.Module):
         self.num_class = num_class
         self.use_style_enc = use_style_enc
         self.use_chord_enc = use_chord_enc
-        self.attention_type = attention_type
 
         # self.trans_model = NATTEN(config.hidden_per_pitch)
         self.trans_model = LSTM_NATTEN((label_embed_dim+features_embed_dim), 
@@ -58,8 +55,7 @@ class TransModel(nn.Module):
                                         n_layers=self.n_layers,
                                         cross_condition=self.cross_condition,
                                         use_style_enc=self.use_style_enc,
-                                        use_chord_enc=self.use_chord_enc,
-                                        attention_type=self.attention_type
+                                        use_chord_enc=self.use_chord_enc
                                         )
         self.output = nn.Linear(self.n_unit, self.num_class) 
         self.label_emb = nn.Embedding(num_state + 1, # +1 is for mask
@@ -71,8 +67,6 @@ class TransModel(nn.Module):
             self.cond_drop_prob = cfg_config["cond_drop_prob"]
             self.cfg_mode = cfg_config["cfg_mode"]
             print('Use CFG with cond_scale: ', self.cond_scale, 'cond_drop_prob: ', self.cond_drop_prob)
-            # self.null_feature_emb = nn.Parameter(th.randn(1, self.features_embed_dim)) # null embedding for cfg
-            # multiply elements in self.spatial_size in 1 line
             if self.cfg_mode == "null":
                 self.null_feature_emb = nn.Parameter(th.randn(th.prod(th.tensor(self.spatial_size)), self.features_embed_dim))
             else:
@@ -95,13 +89,10 @@ class TransModel(nn.Module):
             if self.cfg_mode == 'chord':
                 if cfg_feature is not None:
                     keep_mask = th.zeros((batch,1,1), device=feature.device).float().uniform_(0, 1) < (1 - cond_drop_prob)
-                    
                     feature = th.where(keep_mask, feature, cfg_feature)
-                    # if th.rand(1).item() < cond_drop_prob:
-                        # feature = cfg_feature
+                    
             elif self.cfg_mode == 'null':
                 keep_mask = th.zeros((batch,1,1), device=feature.device).float().uniform_(0, 1) < (1 - cond_drop_prob)
-                # null_cond_emb = self.null_feature_emb.repeat(label.shape[0], label.shape[1], 1) # B x T*88 x label_embed_dim
                 null_cond_emb = self.null_feature_emb.repeat(label.shape[0], 1, 1) # B x T*88 x label_embed_dim
                 
                 feature = th.where(keep_mask, feature, null_cond_emb) 
@@ -140,7 +131,6 @@ class LSTM_NATTEN(nn.Module):
                  diffusion_step,
                  natten_direction,
                  spatial_size,
-                 attention_type,
                  dilation: List[int],
                  use_style_enc: bool,
                  use_chord_enc: bool,
@@ -165,27 +155,16 @@ class LSTM_NATTEN(nn.Module):
         self.module_type = type
         self.use_style_enc = use_style_enc
         self.use_chord_enc = use_chord_enc
-        self.attention_type = attention_type
         
         if self.natten_dir == '2d' and cross_condition == 'self':
             self.na = []
             for i in range(n_layers):
-                if self.attention_type == 'NAT':
-                    self.na.append(NeighborhoodAttention2D_diffusion(n_unit, 4, window[i],
-                                                                        diffusion_step=self.diffusion_step,
-                                                                        dilation=self.dilation[i],
-                                                                        timestep_type=self.timestep_type, 
-                                                                        use_style_enc=self.use_style_enc,
-                                                                        use_chord_enc=self.use_chord_enc))
-                elif self.attention_type == 'SAT':
-                    from transcription.diffusion.self_attention_diffusion import SelfAttention2D_diffusion
-                    self.na.append(SelfAttention2D_diffusion(n_unit, 4, window[i],
-                                                             diffusion_step=self.diffusion_step,
-                                                             timestep_type=self.timestep_type, 
-                                                             use_style_enc=self.use_style_enc,
-                                                             use_chord_enc=self.use_chord_enc))
-                else:
-                    raise NotImplementedError(f"Attention type: {self.attention_type}")
+                self.na.append(NeighborhoodAttention2D_diffusion(n_unit, 4, window[i],
+                                                                    diffusion_step=self.diffusion_step,
+                                                                    dilation=self.dilation[i],
+                                                                    timestep_type=self.timestep_type, 
+                                                                    use_style_enc=self.use_style_enc,
+                                                                    use_chord_enc=self.use_chord_enc))
             self.na = nn.ModuleList(self.na)
         else:
             raise NotImplementedError(f"natten_dir: {self.natten_dir}, cross_condition: {self.cross_condition}")
