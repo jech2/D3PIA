@@ -72,7 +72,7 @@ model:
       natten_direction: 2d
       dilation: [1,1,1,1,1,1,1,1,1,1]
       spatial_size: [128,88]
-      window: [5,5,5,5,5,5,5,5,5,5]
+      window: [21, 21, 21, 21, 21, 21, 21, 21, 21, 21]
       n_unit: 96
       n_layers: 10
       cross_condition: self
@@ -87,7 +87,7 @@ model:
       label_embed_dim: 4
       lstm_dim: 96
       n_layers: 10
-      window: [5,5,5,5,5,5,5,5,5,5]
+      window: [21, 21, 21, 21, 21, 21, 21, 21, 21, 21]
       dilation: [1,1,1,1,1,1,1,1,1,1]
       condition_method: self
       diffusion_step: 100

@@ -299,7 +299,7 @@ class D3RM(DiscreteDiffusion):
             # print(start, end, seg_len, seg, hop_size, leadsheet_pad.shape)
             # print(leadsheet_pad.shape)
             if self.inpainting_ratio == 0:
-                frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_emb=chord_emb, chord_pad=chord_pad)
+                frame_out, labels = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_emb=chord_emb, chord_pad=chord_pad, visualize_denoising=True)
             else:
                 if seg == 0:
                     frame_out, _ = self.sample_func(leadsheet_pad, prev_piano=None, style_emb=style_emb, chord_emb=chord_emb, chord_pad=chord_pad)
@@ -337,6 +337,16 @@ class D3RM(DiscreteDiffusion):
                     frame_outs[:, int(start+seg_len*(1-self.inpainting_ratio)):end] = sample[:, int(seg_len*(1-self.inpainting_ratio)):seg_len]
 
             
+            
+            sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
+            if end > total_frame:
+                frame_outs[:, start:total_frame] = sample[:, :seg_len-(end-total_frame)]
+            else:
+                frame_outs[:, start:end] = sample[:, :seg_len]
+
+            
+            # Path(self.test_save_path).mkdir(parents=True, exist_ok=True)
+
             # for idx in range(len(frame_out)):
             #     # leadsheet
             #     plt.figure(figsize=(8,4))
@@ -345,19 +355,21 @@ class D3RM(DiscreteDiffusion):
             #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_leadsheet.png')
             #     plt.close()
                     
-            sample = frame_out.reshape(frame_out.shape[0], -1, 88).detach()
-            if end > total_frame:
-                frame_outs[:, start:total_frame] = sample[:, :seg_len-(end-total_frame)]
-            else:
-                frame_outs[:, start:end] = sample[:, :seg_len]
-
-            # for idx in range(len(frame_out)):
-            #     # frame out
-            #     plt.figure(figsize=(8,4))
+            #     plt.figure(figsize=(8, 4))
             #     plt.imshow(sample[idx].detach().cpu().numpy().T, origin='lower', aspect='auto')
             #     plt.title(f'Piano roll {idx}')
-            #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}.png')
+            #     plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_prev_piano.png')
             #     plt.close()
+            
+            #     for t in range(len(labels)):
+            #         plt.figure(figsize=(8, 4))
+            #         print(len(labels), labels[0].shape)
+            #         label = labels[t].reshape(labels[t].shape[0], -1, 88) 
+            #         plt.imshow(label.T, origin='lower', aspect='auto')
+            #         plt.title(f'Piano roll {idx}')
+                    
+            #         plt.savefig(Path(self.test_save_path) / f'piano_roll_{batch_idx}_{seg}_{idx}_{t}_labels.png')
+            #         plt.close() 
 
         frame_outs = frame_outs[:, :total_frame]
 
@@ -406,6 +418,8 @@ class D3RM(DiscreteDiffusion):
         if sampling==False:
             if isinstance(self.encoder, LSTM_NATTEN):
                 feature = self.encoder(cond_audio, label_emb=self.decoder.label_emb)
+
+                
                 feature_for_cfg = self.encoder(cond_chord_for_cfg, label_emb=self.decoder.label_emb) if cond_chord_for_cfg is not None else None
             else:
                 feature = self.encoder(cond_audio)

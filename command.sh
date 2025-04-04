@@ -19,3 +19,7 @@ scp -P 30000 -r eunjin@mac-herbie3.kaist.ac.kr:/workspace/eunjin/d3rm/data ./dat
 scp -P 30000 -r eunjin@mac-herbie3.kaist.ac.kr:/workspace/eunjin/Dataset/POP909-Dataset/POP909_processed_polyffusion_split ./POP909_processed_polyffusion_split
 
 scp -P 30000 -r eunjin@mac-herbie3.kaist.ac.kr:/workspace/eunjin/Dataset/POP909-Dataset/POP909_valid_for_ls_inference_polyffusion_split ./POP909_valid_for_ls_inference_polyffusion_split
+
+2025-03-06T22-33-08
+2025-03-14T04-15-08_no_chord_in_lead_use_chord_enc_temp_1.5_no_inpaint
+2025-03-15T17-53-17_w_bridge_temp_1.5_no_inpaint_w_size_13

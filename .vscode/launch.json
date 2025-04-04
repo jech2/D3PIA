@@ -14,7 +14,7 @@
             "args": [
                 "fit",
                 "-c",
-                "./configs/D3RM_large_cli_pop909.yaml",
+                "./configs/D3RM_large_cli_pop909_bridge.yaml",
             ],
             "env": {
                 "PYTHONPATH": "${workspaceFolder}${pathSeparator}${env:PYTHONPATH}"
@@ -31,7 +31,7 @@
             "args": [
                 "test",
                 "-c",
-                "./logs/2025-01-13T17-48-19/config.yaml",
+                "./logs/2025-02-28T14-59-05/config.yaml",
             ],
             "env": {
                 "PYTHONPATH": "${workspaceFolder}${pathSeparator}${env:PYTHONPATH}"
