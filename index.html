@@ -333,7 +333,7 @@
     <h1>D3PIA: A Discrete Denoising Diffusion Model for Piano Accompaniment Generation</h1>
     <h2>Anonymous submission to ISMIR 2025</h2>
     <p>
-      We propose a discrete diffusion-based piano accompaniment generation model, <b>D3PIA</b>, leveraging the locally aligned structure of musical accompaniments with the lead sheet in the piano roll representation.
+      We propose a discrete diffusion-based piano accompaniment generation model, <b>D3PIA</b>, leveraging the locally aligned structure of musical accompaniments with the lead sheet in the piano roll representation. On this demo page, we showcase <b>20 randomly selected generated samples</b> for both the inclusion and exclusion of the bridge, as well as the samples used for subjective evaluation.
     </p>
 
 
@@ -523,7 +523,6 @@
 
     <section id="listening_test">
       <h2>🎧 Samples for the Subjective Evaluation</h2>
-
       <div>
         <h3>🎵 Select a Sample</h3>
         <select id="sampleSelect" onchange="updateSample()">
@@ -778,13 +777,17 @@
       return fetch('demo_src/songs_with_segments.json')
         .then(response => response.json())
         .then(data => {
-          availableSongs = data;
+          // 랜덤하게 20개의 샘플 선택
+          const selectedSamples = selectRandom20Samples(data);
+          availableSongs = selectedSamples;
+          noBridgeAvailableSongs = selectedSamples; // 두 섹션에서 동일한 샘플 사용
           populateSongSelect();
+          populateNoBridgeSongSelect();
         })
         .catch(error => {
           console.error('노래 목록을 가져오는 중 오류 발생:', error);
           // 오류 발생 시 기본 목록 사용
-          availableSongs = {
+          const defaultSamples = selectRandom20Samples({
             "040": ["seg_0_8.mid", "seg_8_16.mid", "seg_16_24.mid", "seg_24_32.mid", "seg_64_72.mid"],
             "069": ["seg_24_32.mid"],
             "077": ["seg_56_64.mid"],
@@ -795,12 +798,68 @@
             "622": ["seg_56_64.mid"],
             "780": ["seg_8_16.mid"],
             "894": ["seg_16_24.mid"]
-          };
+          });
+          availableSongs = defaultSamples;
+          noBridgeAvailableSongs = defaultSamples;
           populateSongSelect();
+          populateNoBridgeSongSelect();
         });
     }
     
-    // 노래 선택 드롭다운 채우기
+    // 랜덤하게 20개의 샘플 선택하는 함수
+    function selectRandom20Samples(data) {
+      const allSamples = [];
+      
+      // 모든 가능한 (song, segment) 조합을 배열로 만듦 (seg_0_8 제외)
+      Object.entries(data).forEach(([song, segments]) => {
+        segments.forEach(segment => {
+          const segmentName = segment.replace('.mid', '');
+          if (segmentName !== 'seg_0_8') { // seg_0_8 제외
+            allSamples.push({
+              song,
+              segment: segmentName
+            });
+          }
+        });
+      });
+
+      // 시드 기반 난수 생성기
+      const seededRandom = function() {
+        let seed = 8888; // 고정된 시드 값
+        return function() {
+          seed = (seed * 9301 + 49297) % 233280;
+          return seed / 233280;
+        };
+      }();
+      
+      // 랜덤하게 20개 선택
+      const selectedSamples = [];
+      const sampleCount = Math.min(20, allSamples.length);
+      const usedIndices = new Set();
+      
+      while (selectedSamples.length < sampleCount) {
+        const randomIndex = Math.floor(seededRandom() * allSamples.length);
+        
+        // 중복 인덱스 방지
+        if (!usedIndices.has(randomIndex)) {
+          usedIndices.add(randomIndex);
+          selectedSamples.push(allSamples[randomIndex]);
+        }
+      }
+      
+      // 선택된 샘플들을 원래 형식으로 변환
+      const result = {};
+      selectedSamples.forEach(({song, segment}) => {
+        if (!result[song]) {
+          result[song] = [];
+        }
+        result[song].push(segment + '.mid');
+      });
+      
+      return result;
+    }
+    
+    // 노래 및 세그먼트 목록 가져오기
     function populateSongSelect() {
       const songSelect = document.getElementById('songSelect');
       songSelect.innerHTML = '';
@@ -1026,29 +1085,7 @@
     
     // 노래 및 세그먼트 목록 가져오기
     function fetchNoBridgeSongList() {
-      return fetch('demo_src/songs_with_segments.json')
-        .then(response => response.json())
-        .then(data => {
-          noBridgeAvailableSongs = data;
-          populateNoBridgeSongSelect();
-        })
-        .catch(error => {
-          console.error('브릿지 없는 노래 목록을 가져오는 중 오류 발생:', error);
-          // 오류 발생 시 기본 목록 사용
-          noBridgeAvailableSongs = {
-            "040": ["seg_0_8.mid", "seg_8_16.mid", "seg_16_24.mid", "seg_24_32.mid", "seg_64_72.mid"],
-            "069": ["seg_24_32.mid"],
-            "077": ["seg_56_64.mid"],
-            "240": ["seg_112_120.mid"],
-            "438": ["seg_16_24.mid"],
-            "460": ["seg_48_56.mid"],
-            "472": ["seg_0_8.mid"],
-            "622": ["seg_56_64.mid"],
-            "780": ["seg_8_16.mid"],
-            "894": ["seg_16_24.mid"]
-          };
-          populateNoBridgeSongSelect();
-        });
+      return Promise.resolve(); // 이미 fetchSongList에서 처리됨
     }
     
     // 노래 선택 드롭다운 채우기
@@ -1192,34 +1229,30 @@
 
     // 두 섹션에 대해 동일한 랜덤 선택을 수행하는 함수
     function selectRandomForBothSections() {
-      const songSelect = document.getElementById('songSelect');
-      const songOptions = Array.from(songSelect.options);
-      const randomSongIndex = Math.floor(Math.random() * songOptions.length);
-      const selectedSong = songOptions[randomSongIndex].value;
+      // 초기 샘플을 835 seg_40_48로 설정
+      const initialSong = '835';
+      const initialSegment = 'seg_40_48';
       
       // 브릿지 있는 섹션 설정
-      songSelect.value = selectedSong;
+      const songSelect = document.getElementById('songSelect');
+      songSelect.value = initialSong;
       updateSongSelection();
       
       // 브릿지 없는 섹션 설정
       const noBridgeSongSelect = document.getElementById('noBridgeSongSelect');
-      noBridgeSongSelect.value = selectedSong;
+      noBridgeSongSelect.value = initialSong;
       updateNoBridgeSongSelection();
       
       // 약간의 지연 후 세그먼트 선택
       setTimeout(() => {
-        const segmentSelect = document.getElementById('segmentSelect');
-        const segmentOptions = Array.from(segmentSelect.options);
-        const randomSegmentIndex = Math.floor(Math.random() * segmentOptions.length);
-        const selectedSegment = segmentOptions[randomSegmentIndex].value;
-        
         // 브릿지 있는 섹션 세그먼트 설정
-        segmentSelect.value = selectedSegment;
+        const segmentSelect = document.getElementById('segmentSelect');
+        segmentSelect.value = initialSegment;
         updateSegmentSelection();
         
         // 브릿지 없는 섹션 세그먼트 설정
         const noBridgeSegmentSelect = document.getElementById('noBridgeSegmentSelect');
-        noBridgeSegmentSelect.value = selectedSegment;
+        noBridgeSegmentSelect.value = initialSegment;
         updateNoBridgeSegmentSelection();
       }, 100);
     }
