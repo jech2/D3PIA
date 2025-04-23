@@ -53,6 +53,7 @@ uv run python main_cli.py test -c ./logs/{exp_id}/config.yaml
 # convert midi file from npy
 uv run python pr_mat_to_midi.py --wandb_id {exp_id}
 ```
+By utilizing config files of logs/2025-02-21T00-01-12(with bridge) and logs/2025-03-04T19-05-17(without bridge), you can inference with pretrained checkpoints.
 
 ## License
 This project is licensed under [The MIT License](https://opensource.org/licenses/MIT). 
