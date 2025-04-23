@@ -1,0 +1,14 @@
+#ifndef GM_DEBUG_OFF
+#define ASSERT_POW2(N){ \
+	Key ASSERT_POW2_N = N; \
+	Key ASSERT_POW2_BIT_COUNTER=0; \
+	while(ASSERT_POW2_N>0){ \
+		ASSERT_POW2_BIT_COUNTER+=(Key)(ASSERT_POW2_N&1); \
+		ASSERT_POW2_N>>=1; \
+	} \
+	ASSERT(ASSERT_POW2_BIT_COUNTER==1); \
+}
+#endif
+
+#define MOD_POW2(K, P2) ((K)&(P2-1))
+

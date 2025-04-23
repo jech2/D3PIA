@@ -1,0 +1,8 @@
+Metadata-Version: 2.1
+Name: midisym
+Version: 0.1.0
+Summary: A custom simple MIDI reader based on mido
+Home-page: https://github.com/jech2/midisym
+Author: Eunjin Choi
+Author-email: jech@kaist.ac.kr
+Requires-Dist: mido

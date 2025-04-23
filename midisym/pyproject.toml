@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "midisym"
+version = "0.1.0"
+description = ""
+authors = ["Eunjin Choi"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+mido = "^1.3.2"
+mir-eval = "^0.7"
+symusic = "^0.5.2"
+pytest-benchmark = "^4.0.0"
+miditoolkit = "^1.0.1"
+pretty-midi = "^0.2.10"
+pandas = "^2.1.0"
+partitura = "^1.5.0"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+
+[build-system]
+requires = ["poetry-core", "numpy"]
+build-backend = "poetry.core.masonry.api"
