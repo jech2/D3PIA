@@ -1,60 +1,56 @@
-# D3RM : A Discrete Denoising Diffusion Refinement Model for Piano Transcription
+# D3PIA: A Discrete Denoising Diffusion Model for Piano Accompaniment Generation
 
-This is the source code of D3RM paper accepted in ICASSP 2025.
-Regarding the reproducement of the paper, please let me know your concerns and feel free to comment them in the `Issues` part.
+This is the official repository for our paper: **“D3PIA: A Discrete Denoising Diffusion Model for Piano Accompaniment Generation”** (submitted to ISMIR 2025).
 
-<img src="https://github.com/hanshounsu/d3rm/blob/main/images/Absorbing%20state.png?raw=true" height="300"/> <img src="https://github.com/hanshounsu/d3rm/blob/main/images/Model%20architecture.png" height="300"/>
+
+We propose a discrete diffusion-based piano accompaniment generation model, **D3PIA**, leveraging the locally aligned structure of musical accompaniments with the lead sheet in the piano roll representation. Our model incorporates Neighborhood Attention (NA) to both encode the lead sheet and condition it for predicting note states in the piano accompaniment, which enhances local contextual modeling by efficiently attending to nearby melody and chord conditions. 
+
+<!-- <img src="./images/model_structure.png" height="500"/>  -->
+
+## Links
+
+- **Interactive Demo:** [Anonymized Demo Page](https://anonymous-researcher-mir.github.io/D3PIA/)
+- [POP909 Dataset](https://github.com/music-x-lab/POP909-Dataset)
+
 
 
 ## Installation
 
+Click **Download Repository**.
+
 ```shell
-git clone https://github.com/hanshounsu/d3rm.git
-pip -r install requirements.txt
+# install uv from https://docs.astral.sh/uv/getting-started/installation/
+uv sync
+# install midisym (private midi library)
+./install_midisym.sh
 ```
-Current project is based on pytorch-lightning 2.5.0.
 
-## Model Download
-* Pretrained NAR-HC baseline model [[link](https://drive.google.com/file/d/1puA0CkXGioXs9OrS1w-AvwN71yi2cxae/view?usp=sharing)]
-* Pretrained D3RM model [[link]()] 
+## Checkpoint Download
+* Pretrained D3PIA model [link](https://drive.google.com/file/d/1dw_TbM6yn5EiO9_fqRjd9o3TO5kXxy0L/view?usp=drive_link)
 
-Place the pretrained D3RM model in ./checkpoints/pretrained/
+Unzip the pre-trained D3PIA model and change the unzipped directory as ./checkpoints.
 
-## Download MAESTRO
-Download here [[link](https://storage.googleapis.com/magentadata/datasets/maestro/v3.0.0/maestro-v3.0.0.zip)]
 
-Place the dataset folder inside ./data
+## Download POP909
+Place the dataset folder inside ./data and split the dataset.
+We utilized polyffusion's split and used the pre-processed MIDI of POP909 by [WholeSongGen](https://github.com/ZZWaang/whole-song-gen), which can be downloadable from [here](https://drive.google.com/file/d/1yc3NzUNpEMY8MnF4cNyQnCLjrXT2S0Jp/view?usp=sharing).
 
 ## Training the model
 ```shell
-python3 main_cli.py fit -c ./configs/D3RM_cli.yaml
+uv run python main_cli.py fit -c ./configs/D3PIA_default.yaml
 ```
 
 ## Inference
 ```shell
-python3 main_cli.py test -c ./logs/{exp_id}/config.yaml
-# you need to update ckpt_path in ckpt file
+# first, you need to update ckpt_path of config file.
+# you can choose checkpoint from ./logs/{exp_id} (last checkpoint) or ./checkpoints/{exp_id}.
+uv run python main_cli.py test -c ./logs/{exp_id}/config.yaml
+
+# convert midi file from npy
+uv run python pr_mat_to_midi.py --wandb_id {exp_id}
 ```
-
-<!-- ## Acknowledge -->
-
-<!-- 1. We had a consistent design of [FunASR](https://github.com/alibaba/FunASR), including dataloader, model definition and so on. -->
-<!-- 2. We borrowed a lot of code from [Kaldi](http://kaldi-asr.org/) for data preparation. -->
-<!-- 4. We borrowed the design of model architecture from [Enocdec](https://github.com/facebookresearch/encodec) and [Enocdec_Trainner](https://github.com/Mikxox/EnCodec_Trainer). -->
 
 ## License
 This project is licensed under [The MIT License](https://opensource.org/licenses/MIT). 
 
-## Citations
-
-``` bibtex
-@misc{hskim2023d3rm,
-      title={D3RM : A Discrete Denoising Diffusion Refinement Model for Piano Transcription},
-      author={Hounsu Kim, Taegyun Kwon, Juhan Nam},
-      year={2024},
-      eprint={},
-      archivePrefix={arXiv},
-      primaryClass={cs.Sound}
-}
-```
-
+<!-- ## Citations -->

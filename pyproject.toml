@@ -30,4 +30,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-midisym = { path = "../midisym" }
+midisym = { path = "midisym" }
