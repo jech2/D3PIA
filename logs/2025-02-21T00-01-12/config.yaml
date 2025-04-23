@@ -1,0 +1,197 @@
+# pytorch_lightning==2.5.0.post0
+seed_everything: 23
+trainer:
+  accelerator: gpu
+  strategy: ddp
+  devices: 1
+  num_nodes: 1
+  precision: null
+  logger: null
+  callbacks:
+  - class_path: d3pia.callbacks.ema.EMACallback
+    init_args:
+      decay: 0.99
+      use_ema_weights: true
+      update_interval: 25
+  fast_dev_run: false
+  max_epochs: null
+  min_epochs: null
+  max_steps: 800000
+  min_steps: null
+  max_time: null
+  limit_train_batches: null
+  limit_val_batches: null
+  limit_test_batches: null
+  limit_predict_batches: null
+  overfit_batches: 0.0
+  val_check_interval: 2500
+  check_val_every_n_epoch: null
+  num_sanity_val_steps: null
+  log_every_n_steps: 10
+  enable_checkpointing: null
+  enable_progress_bar: null
+  enable_model_summary: null
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
+  deterministic: null
+  benchmark: true
+  inference_mode: true
+  use_distributed_sampler: true
+  profiler: null
+  detect_anomaly: false
+  barebones: false
+  plugins: null
+  sync_batchnorm: false
+  reload_dataloaders_every_n_epochs: 0
+  default_root_dir: null
+model:
+  encoder:
+    class_path: d3pia.model.LSTM_NATTEN
+    init_args:
+      hidden: 4
+      timestep_type: null
+      diffusion_step: 100
+      natten_direction: 2d
+      spatial_size:
+      - 128
+      - 88
+      dilation:
+      - 1
+      - 2
+      - 4
+      - 8
+      - 16
+      - 1
+      - 2
+      - 4
+      - 8
+      - 16
+      use_style_enc: false
+      window:
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      n_unit: 96
+      n_head: 4
+      n_layers: 10
+      cross_condition: self
+      type: encoder
+      use_chord_enc: false
+  decoder:
+    class_path: d3pia.model.Decoder
+    init_args:
+      label_embed_dim: 4
+      lstm_dim: 96
+      n_layers: 10
+      window:
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      - 5
+      dilation:
+      - 1
+      - 2
+      - 4
+      - 8
+      - 16
+      - 1
+      - 2
+      - 4
+      - 8
+      - 16
+      condition_method: self
+      diffusion_step: 100
+      timestep_type: adalayernorm
+      natten_direction: 2d
+      spatial_size:
+      - 128
+      - 88
+      use_style_enc: false
+      num_state: 4
+      classifier_free_guidance: false
+      cfg_config:
+        cond_scale: 2
+        cond_drop_prob: 0.1
+        cfg_mode: chord
+      features_embed_dim: 96
+      num_class: 3
+      use_chord_enc: false
+  use_chord_enc: false
+  chord_enc_ckpt: pretrained/polydis/model_master_final.pt
+  use_style_enc: false
+  style_enc_ckpt: pretrained/polydis/model_master_final.pt
+  ref_arr_style_path: null
+  test_save_path: ./results/2025-02-21T00-01-12_temperature_1.5_200k_no_inpainting
+  inpainting_ratio: 0.0
+  optimizer:
+    class_path: torch.optim.AdamW
+    init_args:
+      lr: 0.001
+      betas:
+      - 0.9
+      - 0.96
+      eps: 1.0e-08
+      weight_decay: 0.045
+      amsgrad: false
+      maximize: false
+      foreach: null
+      capturable: false
+      differentiable: false
+      fused: null
+  scheduler:
+    class_path: lightning.pytorch.cli.ReduceLROnPlateau
+    init_args:
+      monitor: train/diffusion_loss
+      mode: min
+      factor: 0.8
+      patience: 25000
+      threshold: 0.1
+      threshold_mode: rel
+      cooldown: 0
+      min_lr: 1.0e-05
+      eps: 1.0e-08
+      verbose: false
+  label_seq_len: 11264
+  diffusion_step: 100
+  gamma_bar_T: 0.6
+  auxiliary_loss_weight: 0.0005
+  adaptive_auxiliary_loss: true
+  mask_weight:
+  - 1.0
+  - 1.0
+  onset_suppress_sample: false
+  temperature: 1.5
+  onset_weight_kl: false
+  no_mask: false
+  sample_from_fully_masked: true
+  reverse_sampling: true
+  repaint: 3
+data:
+  data_dir: ./data/POP909-Dataset/POP909_processed_polyffusion_split_whole_song_gen_version
+  train_seq_len: 128
+  valid_seq_len: 128
+  batch_size: 8
+  num_workers: 12
+  pr_res: 16
+  transpose: true
+  no_chord_in_lead: false
+  bridge_in_arrangement: true
+debug: false
+wandb: true
+optimizer: null
+lr_scheduler: null
+ckpt_path: ./checkpoints/2025-02-21T00-01-12/step=0212500-metric_note_with_offsets_f1=0.4915.ckpt

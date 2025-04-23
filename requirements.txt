@@ -1,0 +1,19 @@
+# Python 3.9
+
+wandb
+adabelief_pytorch
+nnaudio==0.3.2
+librosa==0.9.2
+mido==1.2
+mir_eval==0.7
+tqdm
+termcolor
+torch==2.1.2
+torchaudio==2.1.2
+torchvision==0.16.2
+lightning
+numpy==1.25.2
+timm
+
+# Install manually
+# natten==0.15.1+torch210cu121 -f https://shi-labs.com/natten/wheels/

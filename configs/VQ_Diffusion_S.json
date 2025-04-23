@@ -1,0 +1,94 @@
+{
+  "wandb": false,
+  "local_model_name": "NAR",
+  "lm_model_name": "LSTM_NATTEN",
+  "n_mels": 495,
+  "film": true,
+  "frontend_filter_size": 3,
+  "use_vel": false,
+  "noisy_condition": false,
+  "diffusion_config": {
+    "target": "diffusion.trainer.DiscreteDiffusion",
+    "params": {
+      "diffusion_step": 100,
+      "alpha_init_type": "alpha2",
+      "auxiliary_loss_weight": 5.0e-4,
+      "adaptive_auxiliary_loss": true,
+      "mask_weight": [
+        1,
+        1
+      ],
+      "classifier_free_guidance": false,
+      "onset_suppress_sample": false,
+      "onset_weight_kl": false,
+      "no_mask": false,
+      "sample_from_fully_masked": true,
+      "reverse_sampling": true
+    }
+  },
+  "model_config": {
+    "params": {
+      "natten_direction": "2d",
+      "attn_type": "self",
+      "label_seq_len": 27544,
+      "timestep_type": "adalayernorm",
+      "cross_condition": "self",
+      "trained_encoder": true,
+      "encoder_type": "NAR"
+    },
+    "label_emb_config": {
+      "num_embed": 5,
+      "label_embed_dim": 4
+    }
+  },
+  "solver": {
+    "base_lr": 3.0e-6,
+    "adjust_lr": "none",
+    "max_epochs": 800,
+    "save_epochs": 30,
+    "validation_epochs": 800,
+    "sample_iterations": "epoch",
+    "print_specific_things": true,
+    "ema": {
+      "decay": 0.99,
+      "update_interval": 25,
+      "device": "cpu"
+    },
+    "clip_grad_norm": {
+      "target": "diffusion.clip_grad_norm.ClipGradNorm",
+      "params": {
+        "start_iteration": 0,
+        "end_iteration": 1000000,
+        "max_norm": 1
+      }
+    },
+    "optimizers_and_schedulers": [
+      {
+        "name": "none",
+        "optimizer": {
+          "target": "torch.optim.AdamW",
+          "params": {
+            "betas": [
+              0.9,
+              0.96
+            ],
+            "weight_decay": 4.5e-2
+          }
+        },
+        "scheduler": {
+          "step_iteration": 1,
+          "target": "diffusion.lr_scheduler.ReduceLROnPlateauWithWarmup",
+          "params": {
+            "factor": 0.8,
+            "patience": 25000,
+            "min_lr": 1.0e-5,
+            "threshold": 1.0e-1,
+            "threshold_mode": "rel",
+            "warmup_lr": 4.5e-4,
+            "warmup": 1000
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+*.pt
+data/maestro-v3.0.0/
+runs/
+*.zip
+*.pyc
+checkpoints/
+lightning_logs/
+results/
+wandb/
+.python-version
+data/
+*/__pycache__/

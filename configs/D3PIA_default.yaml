@@ -1,0 +1,114 @@
+seed_everything: 23
+wandb: True
+debug: False
+
+trainer:
+  benchmark: True
+  gradient_clip_algorithm: norm
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  devices: 1 
+  accelerator: gpu
+  strategy: ddp
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 20
+  val_check_interval: null
+  max_steps: 800000
+  num_sanity_val_steps: 0
+
+  callbacks:
+    - class_path: d3pia.callbacks.ema.EMACallback
+      init_args:
+        decay: 0.99
+        use_ema_weights: True
+        update_interval: 25
+
+model:
+  test_save_path: './results/'
+  label_seq_len: 11264 # to 128 * 88
+  diffusion_step: 100
+  gamma_bar_T: 0.6
+  auxiliary_loss_weight: 5.0e-4
+  adaptive_auxiliary_loss: true
+  mask_weight: [1, 1]
+  onset_suppress_sample: False # deprecated
+  temperature: 1.0
+  onset_weight_kl: False
+  no_mask: False
+  sample_from_fully_masked: True
+  reverse_sampling: True
+  inpainting_ratio: 0 # how much to inpaint
+  repaint: 5
+  use_style_enc: False # check the decoder parameter use_style_enc is same as this
+  style_enc_ckpt: pretrained/polydis/model_master_final.pt
+  ref_arr_style_path: null
+  use_chord_enc: False
+  chord_enc_ckpt: pretrained/chd8bar/weights_best.pt
+ 
+  encoder:
+    class_path: d3pia.model.LSTM_NATTEN
+    init_args:
+      hidden: 4
+      timestep_type: null
+      diffusion_step: 100
+      natten_direction: 2d
+      dilation: [1,2,4,8,16,1,2,4,8,16]
+      spatial_size: [128,88]
+      window: [5,5,5,5,5,5,5,5,5,5]
+      n_unit: 96
+      n_layers: 10
+      cross_condition: self
+      type: encoder
+      use_style_enc: False # we only use style encoder in decoder
+      use_chord_enc: False # we only use chord encoder in decoder
+
+  decoder:  
+    class_path: d3pia.model.Decoder
+    init_args:
+      label_embed_dim: 4
+      lstm_dim: 96
+      n_layers: 10
+      window: [5,5,5,5,5,5,5,5,5,5]
+      dilation: [1,2,4,8,16,1,2,4,8,16]
+      condition_method: self
+      diffusion_step: 100
+      timestep_type: adalayernorm
+      natten_direction: 2d
+      spatial_size: [128,88]
+      num_state: 4
+      num_class: 3
+      classifier_free_guidance: False
+      cfg_config:
+        cond_scale: 2
+        cond_drop_prob: 0.1
+        cfg_mode: "null"
+      features_embed_dim: 96
+      use_style_enc: False
+      use_chord_enc: False
+
+  optimizer:
+    class_path: torch.optim.AdamW
+    init_args:
+      lr: 1.0e-3
+      weight_decay: 4.5e-2
+      betas: [0.9, 0.96]
+
+  scheduler:
+    monitor: train/diffusion_loss
+    factor: 0.8
+    patience: 25000
+    min_lr: 1.0e-5
+    threshold: 1.0e-1
+    threshold_mode: rel
+
+data:
+  data_dir: './data/POP909-Dataset/POP909_processed_polyffusion_split_whole_song_gen_version'
+  batch_size: 8 
+  num_workers: 12
+  train_seq_len: 128
+  valid_seq_len: 128
+  transpose: true
+  pr_res: 16
+  bridge_in_arrangement: true
+  no_chord_in_lead: false # should be true when chord embedding is used
+  
