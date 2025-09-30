@@ -24,6 +24,7 @@ Click **Download Repository**.
 
 ```shell
 # install uv from https://docs.astral.sh/uv/getting-started/installation/
+uv venv --python 3.10
 uv sync
 # install midisym (private midi library)
 ./install_midisym.sh

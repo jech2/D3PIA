@@ -72,10 +72,14 @@ class EMACallback(Callback):
     #     if self.ema is not None:
     #         self.ema.module.load_state_dict(callback_state["state_dict_ema"])
     def on_load_checkpoint(self, trainer, pl_module, checkpoint):
+        print("Loading checkpoint...")
         if self.ema is None:
             self.ema = ModelEmaV2(pl_module, decay=self.decay, device=None)
         if "state_dict_ema" in checkpoint:
             self.ema.module.load_state_dict(checkpoint["state_dict_ema"])
+            print("EMA weights loaded from checkpoint.")
+        else:
+            print("No EMA weights found in checkpoint.")
 
     def store(self, parameters):
         "Save the current parameters for restoring later."
