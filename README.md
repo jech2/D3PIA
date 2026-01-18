@@ -58,4 +58,11 @@ Note that we uploaded the D3PIA inference samples on whole POP909-valid (polyffu
 ## License
 This project is licensed under [The MIT License](https://opensource.org/licenses/MIT). 
 
-<!-- ## Citations -->
+## Citations
+@inproceedings{choi2026d3pia,
+  title     = {D3PIA: A Discrete Denoising Diffusion Model for Piano Accompaniment Generation from Lead Sheet},
+  author    = {Choi, Eunjin and Kim, Hounsu and Bang, Hayeon and Kwon, Taegyun and Nam, Juhan},
+  booktitle = {Proceedings of the IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP)},
+  year      = {2026},
+  publisher = {IEEE}
+}
