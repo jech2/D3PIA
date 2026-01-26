@@ -11,7 +11,7 @@ We propose a discrete diffusion-based piano accompaniment generation model, **D3
 
 ## Links
 
-- **Interactive Demo:** [Anonymized Demo Page](https://anonymous-researcher-mir.github.io/D3PIA/)
+- **Interactive Demo:** [Demo Page](https://jech2.github.io/D3PIA/)
 - [POP909 Dataset](https://github.com/music-x-lab/POP909-Dataset)
 
 
