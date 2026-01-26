@@ -29,14 +29,14 @@ uv sync
 ```
 
 ## Checkpoint Download
-* Pretrained D3PIA model [link]()
+* Pretrained D3PIA model [link](https://drive.google.com/file/d/1MQFHu9QWJlnT7k8ZYWWFIq1DyHobKVNJ/view?usp=sharing)
 
 Unzip the pre-trained D3PIA model and change the unzipped directory as ./checkpoints.
 
 
 ## Download POP909
 Place the dataset folder inside ./data and split the dataset.
-We utilized random split (train:val:test=8:1:1) and used the pre-processed MIDI of POP909 by [WholeSongGen](https://github.com/ZZWaang/whole-song-gen), which can be downloadable from [here]().
+We utilized random split (train:val:test=8:1:1) and used the pre-processed MIDI of POP909 by [WholeSongGen](https://github.com/ZZWaang/whole-song-gen), which can be downloadable from [here](https://drive.google.com/file/d/1S-BHl50mXqiKSsjaPjldzpZH1UsCGXvW/view?usp=sharing).
 
 ## Training the model
 ```shell
