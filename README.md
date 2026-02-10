@@ -52,7 +52,7 @@ uv run python main_cli.py test -c ./logs/{exp_id}/config.yaml
 # convert midi file from npy
 uv run python pr_mat_to_midi.py --wandb_id {exp_id}
 ```
-By utilizing config files of logs/2025-02-21T00-01-12(with bridge) and logs/2025-03-04T19-05-17(without bridge), you can inference with pretrained checkpoints.
+By utilizing config files in the checkpoint, you can inference with pretrained checkpoints.
 Note that we uploaded the D3PIA inference samples on whole POP909-valid (polyffusion split) and subjecitve evaluation samples in `./inference_samples` directory.
 
 ## License
